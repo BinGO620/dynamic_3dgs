@@ -13,33 +13,19 @@ import torch
 class GaussianModel:
     """Params dict + per-key optimizers, keys matching gsplat strategy spec."""
 
-    def __init__(self, init_frame: dict, K: np.ndarray, init_stride: int = 4,
+    def __init__(self, points: np.ndarray, colors: np.ndarray,
                  sh_degree: int = 3, device: str = "cuda"):
+        """``points`` (N,3) world coords, ``colors`` (N,3) rgb in [0,1].
+
+        Vanilla ADC cannot grow the map into regions where no gaussian exists,
+        so callers must build the cloud from MULTIPLE frames spread over the
+        sequence (see unproject_frame / voxel_downsample).
+        """
         self.device = device
         self.sh_degree = sh_degree
-
-        depth = init_frame["depth"]  # (H, W) metres
-        rgb = init_frame["rgb"]  # (3, H, W) [0,1]
-        # stored T_cw (world-to-camera) -> invert for cam->world placement
-        T_wc = np.linalg.inv(init_frame["T_cw"].numpy())
-        H, W = depth.shape
-        ys, xs = torch.meshgrid(
-            torch.arange(H, dtype=torch.float32),
-            torch.arange(W, dtype=torch.float32),
-            indexing="ij",
-        )
-        valid = (depth > 0.0) & torch.isfinite(depth)
-        sel = valid & ((ys + xs) % init_stride == 0)
-        u, v, z = xs[sel], ys[sel], depth[sel]
-        fx, fy = float(K[0, 0]), float(K[1, 1])
-        cx, cy = float(K[0, 2]), float(K[1, 2])
-        x = (u - cx) / fx * z
-        y = (v - cy) / fy * z
-        pts_cam = np.stack([x.numpy(), y.numpy(), z.numpy()], axis=1)  # (N,3)
-        pts_w = (T_wc[:3, :3] @ pts_cam.T).T + T_wc[:3, 3]
-        cols = rgb[:, sel]  # (3, N)
-
+        pts_w, cols = points, colors
         n = pts_w.shape[0]
+
         # init scale = median nearest-neighbour distance (NOT scene-span pairwise
         # median, which would give metre-scale blobs that block all learning)
         base_scale = 0.02
@@ -63,7 +49,7 @@ class GaussianModel:
             ),
             "opacities": torch.nn.Parameter(torch.zeros(n, device=device)),
             "sh0": torch.nn.Parameter(
-                _rgb_to_sh0(cols.t().to(device), sh_degree)
+                _rgb_to_sh0(torch.from_numpy(cols).float().to(device), sh_degree)
             ),
             "shN": torch.nn.Parameter(
                 torch.zeros(n, (sh_degree + 1) ** 2 - 1, 3, device=device)
@@ -93,6 +79,38 @@ class GaussianModel:
 
     def state_dict(self) -> dict:
         return {k: p.detach().cpu().numpy() for k, p in self.params.items()}
+
+
+def unproject_frame(frame: dict, K: np.ndarray, stride: int = 4):
+    """Depth-unproject one frame to world coords; returns (points, colors)."""
+    depth = frame["depth"]  # (H, W) metres
+    rgb = frame["rgb"]  # (3, H, W) [0,1]
+    T_wc = np.linalg.inv(frame["T_cw"].numpy())  # stored T_cw is world-to-camera
+    H, W = depth.shape
+    ys, xs = torch.meshgrid(
+        torch.arange(H, dtype=torch.float32),
+        torch.arange(W, dtype=torch.float32),
+        indexing="ij",
+    )
+    valid = (depth > 0.0) & torch.isfinite(depth)
+    sel = valid & ((ys + xs) % stride == 0)
+    u, v, z = xs[sel], ys[sel], depth[sel]
+    fx, fy = float(K[0, 0]), float(K[1, 1])
+    cx, cy = float(K[0, 2]), float(K[1, 2])
+    x = (u - cx) / fx * z
+    y = (v - cy) / fy * z
+    pts_cam = np.stack([x.numpy(), y.numpy(), z.numpy()], axis=1)  # (N,3)
+    pts_w = (T_wc[:3, :3] @ pts_cam.T).T + T_wc[:3, 3]
+    cols = rgb[:, sel].numpy().T  # (N,3)
+    return pts_w.astype(np.float32), cols.astype(np.float32)
+
+
+def voxel_downsample(points: np.ndarray, colors: np.ndarray, voxel: float):
+    """First-occurrence-per-voxel downsample (order-stable)."""
+    keys = np.floor(points / voxel).astype(np.int64)
+    _, idx = np.unique(keys, axis=0, return_index=True)
+    idx = np.sort(idx)
+    return points[idx], colors[idx]
 
 
 def _rgb_to_sh0(colors: torch.Tensor, sh_degree: int) -> torch.Tensor:

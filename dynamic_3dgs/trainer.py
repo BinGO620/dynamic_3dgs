@@ -17,7 +17,7 @@ from gsplat import rasterization
 from gsplat.strategy import DefaultStrategy
 
 from .dataset import TumFormatDataset
-from .model import GaussianModel
+from .model import GaussianModel, unproject_frame, voxel_downsample
 
 C0 = 0.28209479177387814
 
@@ -55,10 +55,22 @@ class Trainer:
         self.K = torch.from_numpy(dataset.K.astype(np.float32)).to(device)
         self.width, self.height = dataset.width, dataset.height
 
-        t0 = dataset.get_frame(int(dataset.train_indices[0]))
+        t_indices = dataset.train_indices
+        n_init = int(cfg.get("init_frames", 10))
+        sel = np.linspace(0, len(t_indices) - 1, min(n_init, len(t_indices))).astype(int)
+        pts_all, cols_all = [], []
+        for si in sel:
+            frame = dataset.get_frame(int(t_indices[si]))
+            p, c = unproject_frame(frame, dataset.K, int(cfg.get("init_stride", 4)))
+            pts_all.append(p)
+            cols_all.append(c)
+        pts = np.concatenate(pts_all)
+        cols = np.concatenate(cols_all)
+        pts, cols = voxel_downsample(pts, cols, float(cfg.get("init_voxel", 0.04)))
+        print(f"[trainer] init cloud: {pts.shape[0]} points "
+              f"from {len(sel)} frames (voxel {cfg.get('init_voxel', 0.04)}m)", flush=True)
         self.model = GaussianModel(
-            t0, dataset.K,
-            init_stride=int(cfg.get("init_stride", 4)),
+            pts, cols,
             sh_degree=int(cfg.get("sh_degree", 3)),
             device=device,
         )

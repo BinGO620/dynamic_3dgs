@@ -3,6 +3,8 @@ abstract: true  # template only, skipped by L1 gate
 seed: 0
 steps: 15000
 init_stride: 4
+init_frames: 10   # init cloud from N frames spread over the sequence
+init_voxel: 0.04  # voxel downsample (m)
 sh_degree: 3
 lr_means: 1.6e-4
 lr_quats: 1.0e-3
