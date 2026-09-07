@@ -20,7 +20,8 @@ class GaussianModel:
 
         depth = init_frame["depth"]  # (H, W) metres
         rgb = init_frame["rgb"]  # (3, H, W) [0,1]
-        T_cw = init_frame["T_cw"].numpy()
+        # stored T_cw (world-to-camera) -> invert for cam->world placement
+        T_wc = np.linalg.inv(init_frame["T_cw"].numpy())
         H, W = depth.shape
         ys, xs = torch.meshgrid(
             torch.arange(H, dtype=torch.float32),
@@ -35,13 +36,22 @@ class GaussianModel:
         x = (u - cx) / fx * z
         y = (v - cy) / fy * z
         pts_cam = np.stack([x.numpy(), y.numpy(), z.numpy()], axis=1)  # (N,3)
-        pts_w = (T_cw[:3, :3] @ pts_cam.T).T + T_cw[:3, 3]
+        pts_w = (T_wc[:3, :3] @ pts_cam.T).T + T_wc[:3, 3]
         cols = rgb[:, sel]  # (3, N)
 
         n = pts_w.shape[0]
-        dist2 = torch.pdist(torch.from_numpy(pts_w[:: max(n // 1000, 1)])) if n > 1 else None
-        median_d = float(torch.median(dist2[dist2 > 0])) if dist2 is not None and dist2.numel() else 0.02
-        base_scale = np.log(max(median_d, 1e-4))
+        # init scale = median nearest-neighbour distance (NOT scene-span pairwise
+        # median, which would give metre-scale blobs that block all learning)
+        base_scale = 0.02
+        if n > 1:
+            sub = torch.from_numpy(pts_w[:: max(n // 2000, 1)])
+            d = torch.cdist(sub, sub)
+            d.fill_diagonal_(float("inf"))
+            nn_d = d.min(dim=1).values
+            nn_d = nn_d[torch.isfinite(nn_d) & (nn_d > 0)]
+            if nn_d.numel():
+                base_scale = float(torch.median(nn_d).clamp_min(1e-4))
+        base_scale = float(np.log(base_scale))
 
         self.params = {
             "means": torch.nn.Parameter(torch.from_numpy(pts_w).float().to(device)),
