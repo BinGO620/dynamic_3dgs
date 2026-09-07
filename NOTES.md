@@ -4,7 +4,7 @@
 
 | # | 日期 | 实验 | 状态 | 一句话结论 |
 |---|---|---|---|---|
-| 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | 🔄 进行 | 本机2060孵化中；判据见 ROADMAP.md §3.2（G0.1-G0.4） |
+| 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | 🔄 进行 | 2060 本机顺序 4 序列×seed0×15k步：static/removing_nobox/placing_nobox/kidnapping_box。判据 G0.1-G0.4（ROADMAP §3.2）。G0.1 ✅（30帧冒烟 rc=0）、L2 ✅（diff=0.000，同 seed 全确定）；本机 2060 登记占用，monogs-ours 会话的 2060 调试 run（~1h）已结束让位 |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
 
