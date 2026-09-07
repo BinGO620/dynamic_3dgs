@@ -1,0 +1,2 @@
+[run_baseline] seq=rgbd_bonn_removing_nonobstructing_box seed=0 steps=15000 device=cuda
+[run_baseline] frames=492 (train 393, eval 99)

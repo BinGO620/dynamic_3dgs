@@ -126,16 +126,23 @@ class TumFormatDataset(torch.utils.data.Dataset):
         # associate rgb <-> depth <-> pose by timestamp
         d_ts = np.array([t for t, _ in depth])
         samples = []
+        n_missing = 0
         for t_rgb, rgb_f in rgb:
             j = np.searchsorted(d_ts, t_rgb)
             cand = [k for k in (j - 1, j) if 0 <= k < len(d_ts)]
             j = min(cand, key=lambda k: abs(d_ts[k] - t_rgb), default=-1)
             if j < 0 or abs(d_ts[j] - t_rgb) > max_dt:
                 continue
+            if not (os.path.isfile(os.path.join(path, rgb_f))
+                    and os.path.isfile(os.path.join(path, depth[j][1]))):
+                n_missing += 1
+                continue
             T_wc = _interp_pose(poses, t_rgb)
             if T_wc is None:
                 continue
             samples.append((t_rgb, rgb_f, depth[j][1], np.linalg.inv(T_wc)))
+        if n_missing:
+            print(f"[dataset] skipped {n_missing} frames with missing files")
         if max_frames > 0:
             samples = samples[:max_frames]
         self.samples = samples

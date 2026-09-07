@@ -1,0 +1,4 @@
+[run_baseline] seq=rgbd_bonn_static seed=0 steps=15000 device=cuda
+[dataset] skipped 857 frames with missing files
+[run_baseline] frames=10009 (train 8007, eval 2002)
+[step   1500] loss=0.4691 l1_rgb=0.1813 l1_depth=1.5915 n_gauss=61743
