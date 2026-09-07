@@ -2,3 +2,8 @@
 [dataset] skipped 857 frames with missing files
 [run_baseline] frames=10009 (train 8007, eval 2002)
 [step   1500] loss=0.4691 l1_rgb=0.1813 l1_depth=1.5915 n_gauss=61743
+[step   3000] loss=0.5508 l1_rgb=0.3120 l1_depth=1.3151 n_gauss=61781
+[step   4500] loss=0.9403 l1_rgb=0.5540 l1_depth=1.9922 n_gauss=82
+[step   6000] loss=0.7054 l1_rgb=0.4457 l1_depth=1.0231 n_gauss=107
+[step   7500] loss=0.8800 l1_rgb=0.4969 l1_depth=1.9009 n_gauss=113
+[step   9000] loss=0.8469 l1_rgb=0.5154 l1_depth=1.5661 n_gauss=115

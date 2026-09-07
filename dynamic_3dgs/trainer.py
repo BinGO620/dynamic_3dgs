@@ -90,7 +90,14 @@ class Trainer:
             revised_opacity=True,
             verbose=False,
         )
-        self.strategy_state = self.strategy.initialize_state()
+        # scene_scale in METRES (gsplat default 1.0 assumes normalized scenes;
+        # a metre-scale indoor scene would be mass-pruned by prune_scale3d)
+        with torch.no_grad():
+            means0 = self.model.params["means"].detach()
+            scene_scale = float((means0.max(0).values - means0.min(0).values).norm())
+        self.strategy_state = self.strategy.initialize_state(
+            scene_scale=max(scene_scale, 1.0)
+        )
 
     def render(self, frame: dict):
         T = frame["T_cw"].to(self.device)
