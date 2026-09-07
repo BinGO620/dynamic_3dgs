@@ -23,6 +23,19 @@ def _load_tum_list(filepath: str) -> np.ndarray:
     return np.loadtxt(filepath, comments="#").astype(np.float64)
 
 
+def _load_tum_filelist(filepath: str):
+    """rgb.txt / depth.txt rows: timestamp filename (3 header comment lines)."""
+    rows = []
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            t, fname = line.split()[:2]
+            rows.append((float(t), fname))
+    return rows
+
+
 def quat_to_mat(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
     """TUM quaternion (x, y, z, w) -> 3x3 rotation matrix."""
     q = np.array([qx, qy, qz, qw], dtype=np.float64)
@@ -106,15 +119,14 @@ class TumFormatDataset(torch.utils.data.Dataset):
         else:
             self.map1x, self.map1y = None, None
 
-        rgb = _load_tum_list(os.path.join(path, "rgb.txt"))
-        depth = _load_tum_list(os.path.join(path, "depth.txt"))
+        rgb = _load_tum_filelist(os.path.join(path, "rgb.txt"))
+        depth = _load_tum_filelist(os.path.join(path, "depth.txt"))
         poses = _load_tum_list(os.path.join(path, "groundtruth.txt"))
 
         # associate rgb <-> depth <-> pose by timestamp
-        d_ts = depth[:, 0]
+        d_ts = np.array([t for t, _ in depth])
         samples = []
-        for row in rgb:
-            t_rgb = row[0]
+        for t_rgb, rgb_f in rgb:
             j = np.searchsorted(d_ts, t_rgb)
             cand = [k for k in (j - 1, j) if 0 <= k < len(d_ts)]
             j = min(cand, key=lambda k: abs(d_ts[k] - t_rgb), default=-1)
@@ -123,7 +135,7 @@ class TumFormatDataset(torch.utils.data.Dataset):
             T_wc = _interp_pose(poses, t_rgb)
             if T_wc is None:
                 continue
-            samples.append((t_rgb, row[1], depth[j, 1], np.linalg.inv(T_wc)))
+            samples.append((t_rgb, rgb_f, depth[j][1], np.linalg.inv(T_wc)))
         if max_frames > 0:
             samples = samples[:max_frames]
         self.samples = samples

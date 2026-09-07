@@ -72,24 +72,25 @@ class Trainer:
         }
         self.opts = self.model.optimizers(lrs)
         self.scheds = self.model.schedulers(self.opts, int(cfg.get("steps", 15000)))
-
-        self.strategy = DefaultStrategy(
-            prune_opa=cfg.get("prune_opa", 0.005),
-            grow_grad2d=cfg.get("grow_grad2d", 0.0002),
-            grow_scale3d=cfg.get("grow_scale3d", 0.01),
-            grow_scale2d=cfg.get("grow_scale2d", 0.0),
-            refine_every=cfg.get("refine_every", 100),
-            reset_opa_every=cfg.get("reset_opa_every", 3000),
-            revised_opacity=True,
-            verbose=False,
-        )
-        self.strategy_state = self.strategy.initialize_state()
-
         self.depth_weight = float(cfg.get("depth_weight", 0.15))
         self.dssim_weight = float(cfg.get("dssim_weight", 0.2))
         self.steps = int(cfg.get("steps", 15000))
         self.n_train = len(dataset.train_indices)
         self._rng = np.random.default_rng(int(cfg.get("seed", 0)))
+
+        self.strategy = DefaultStrategy(
+            prune_opa=cfg.get("prune_opa", 0.005),
+            grow_grad2d=cfg.get("grow_grad2d", 0.0002),
+            grow_scale3d=cfg.get("grow_scale3d", 0.01),
+            grow_scale2d=cfg.get("grow_scale2d", 0.05),
+            refine_start_iter=cfg.get("refine_start_iter", 500),
+            refine_stop_iter=self.steps,
+            reset_every=cfg.get("reset_every", 3000),
+            refine_every=cfg.get("refine_every", 100),
+            revised_opacity=True,
+            verbose=False,
+        )
+        self.strategy_state = self.strategy.initialize_state()
 
     def render(self, frame: dict):
         T = frame["T_cw"].to(self.device)
@@ -103,12 +104,12 @@ class Trainer:
             torch.nn.functional.normalize(params["quats"], dim=-1),
             torch.exp(params["scales"]),
             torch.sigmoid(params["opacities"]),
+            sh,  # colors: SH coefficients (used when sh_degree is set)
             viewmat,
             K,
             self.width,
             self.height,
             sh_degree=max_sh,
-            sh=sh,
             render_mode="RGB+D",
             near_plane=0.01,
             far_plane=1e10,
@@ -139,9 +140,8 @@ class Trainer:
         loss = loss + self.depth_weight * l1_depth
 
         loss.backward()
-        means_lr = self.opts["means"].param_groups[0]["lr"]
         self.strategy.step_post_backward(
-            self.model.params, self.opts, self.strategy_state, step, info, lr=means_lr
+            self.model.params, self.opts, self.strategy_state, step, info
         )
 
         for o in self.opts.values():

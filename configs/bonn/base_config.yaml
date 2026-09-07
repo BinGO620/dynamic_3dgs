@@ -17,7 +17,7 @@ grow_grad2d: 0.0002
 grow_scale3d: 0.01
 prune_opa: 0.005
 refine_every: 100
-reset_opa_every: 3000
+reset_every: 3000
 
 dataset:
   type: bonn
