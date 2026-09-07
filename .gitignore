@@ -1,0 +1,37 @@
+# 数据集（软链接到 /data/monogs-ours/datasets 或 /data/Datasets，绝不复制进仓库）
+datasets
+
+# 重数据：模型/渲染产物只留 manifest 和小表
+results/**/*.ply
+results/**/*.pt
+results/**/*.pth
+results/**/*.mp4
+results/**/*.tar
+results/**/renders/
+results/**/gt/
+results/**/point_cloud/
+weights/
+*.ply
+!results/**/*.txt
+*.tar
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# 环境/编辑器
+.venv/
+.ipynb_checkpoints/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 训练缓存
+cache/
+*.ckpt
+wandb/
