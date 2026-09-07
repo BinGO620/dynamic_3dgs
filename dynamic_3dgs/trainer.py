@@ -114,7 +114,7 @@ class Trainer:
             near_plane=0.01,
             far_plane=1e10,
             backgrounds=None,
-            packed=True,
+            packed=False,  # must match DefaultStrategy.step_post_backward(packed=False)
             absgrad=False,
         )
         return renders, alphas, info

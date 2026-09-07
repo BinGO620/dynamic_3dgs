@@ -42,7 +42,7 @@ class PhotometricEvaluator:
         self.ds = dataset
         self.device = device
         from lpips import LPIPS
-        self.lpips_fn = LPIPS(net_type=lpips_net, normalize=True).to(device).eval()
+        self.lpips_fn = LPIPS(net=lpips_net).to(device).eval()
 
     @torch.no_grad()
     def evaluate(self, render_fn, indices, save_dir: str | None = None,
@@ -60,7 +60,7 @@ class PhotometricEvaluator:
                 "psnr": _psnr(rgb_pred, rgb_gt),
                 "ssim": _ssim(rgb_pred, rgb_gt),
                 "lpips": float(self.lpips_fn(
-                    rgb_pred[None], rgb_gt[None]).item()),
+                    rgb_pred[None], rgb_gt[None], normalize=True).item()),
                 "depth_l1_cm": compute_depth_l1_cm(depth_pred, depth_gt),
             }
             rows.append(row)
