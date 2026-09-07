@@ -5,6 +5,9 @@
 set -u
 
 PY=${PY:-/data/conda_envs/dynamic_3dgs/bin/python}
+# torch cpp_extension needs ninja on PATH: prepend the env's bin dir
+ENV_BIN=$(dirname "$PY")
+export PATH="$ENV_BIN:$PATH"
 EXP_ID=$1; shift
 NWORKERS=$1; shift
 SEQS=("$@")
