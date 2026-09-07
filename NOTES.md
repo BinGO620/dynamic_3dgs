@@ -34,4 +34,19 @@
 
 ## 踩坑记录
 
-- （待记）
+- **cp -al 硬链接复制 conda env 后，bin/pip 的 shebang 仍指向源 env 的 python**
+  （2026-09-08）：`/data/conda_envs/dynamic_3dgs/bin/pip install` 实际把包装进了
+  wildgs-slam（pip 脚本内容是硬链接共享的，shebang 是源路径绝对地址）。
+  已完整恢复 wildgs-slam（卸载误装包、重装 numpy==1.26.3 与 opencv-python==4.8.1.78，
+  验证 torch/cv2 导入正常）。**规矩：克隆 env 里一律用
+  `python -m pip install`，绝不用其 bin/pip 入口。**
+- torch cu118 直下走 corkscrew 代理仅 ~0.3MB/s（2.3GB 需数小时）；清华镜像
+  pypi.tuna.tsinghua.edu.cn 直连快。小包一律走镜像。
+- gsplat 1.5.3 实际 API：`rasterization(means, quats, scales, opacities, colors,
+  viewmats, Ks, width, height)`——SH 系数作为 colors 第 5 位置参数传入；
+  `DefaultStrategy.step_post_backward` 无 lr 参数（读 optimizer param_groups）；
+  字段名是 `reset_every`/`refine_stop_iter`。
+- **2060 与 monogs-ours 会话共用**：其 submap_lcd 调试 run 会占满 6GB
+  （observed 5.7GB/6144MB，400 帧 person_tracking ~40min 级）。上卡前必须
+  `nvidia-smi` 查占用；显存不足时 cusolver 会报 CUSOLVER_STATUS_INTERNAL_ERROR
+  （torch.inverse 创建句柄失败），不是代码 bug。
