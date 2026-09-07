@@ -16,19 +16,23 @@ SLAM 在线语境迁移到纯 3DGS 渲染与建模语境。
 ## 快速开始
 
 ```bash
-# 1. 环境（独立 conda env，原版 gsplat，与 monogs-ours env 完全解耦）
-conda create -n dynamic_3dgs python=3.10 -y
-conda run -n dynamic_3dgs pip install torch==2.4.1+cu118 --index-url https://download.pytorch.org/whl/cu118
-conda run -n dynamic_3dgs pip install gsplat==1.5.3 opencv-python-headless imageio lpips scipy pyyaml tqdm matplotlib
+# 1. 环境（独立 conda env dynamic_3dgs：torch 2.1.0+cu118 + 原版 gsplat 1.5.3，
+#    与 monogs-ours env 完全解耦；建库时由 wildgs-slam env 硬链接复制而来，
+#    新机重建可用 pip install torch==2.1.0+cu118 gsplat==1.5.3）
+export CUDA_HOME=/usr/local/cuda-11.8  # gsplat JIT 编译需要 nvcc 11.8
 
 # 2. 数据（软链接，不复制）
 ln -sfn /data/monogs-ours/datasets datasets
 
-# 3. 冒烟测试（本机 2060 可跑）
-python scripts/run_baseline.py --config configs/bonn/removing_nonobstructing_box.yaml --max-frames 50
+# 3. 门禁
+python tests/test_config_valid.py   # L1: config 完整性
 
-# 4. 基线
-python scripts/run_baseline.py --config configs/bonn/removing_nonobstructing_box.yaml
+# 4. 冒烟（本机 2060，跑前先 nvidia-smi 查占用——见 DISCIPLINE.md GPU 政策）
+python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstructing_box.yaml \
+    --max-frames 30 --steps 300 --exp-id smoke
+
+# 5. 基线
+python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstructing_box.yaml
 ```
 
 ## 目录结构
