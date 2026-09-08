@@ -15,19 +15,22 @@ class GaussianModel:
 
     def __init__(self, points: np.ndarray, colors: np.ndarray,
                  scales: np.ndarray, sh_degree: int = 3, device: str = "cuda",
-                 opacity_init: float = 0.1):
+                 opacity_init: float = 0.1, opacities: np.ndarray | None = None):
         """``points`` (N,3) world coords, ``colors`` (N,3) rgb [0,1],
         ``scales`` (N,) per-point world scale (pixel-footprint rule).
 
-        Vanilla ADC cannot grow the map into regions where no gaussian exists,
-        so callers must build the cloud from MULTIPLE frames spread over the
-        sequence (see unproject_frame / voxel_downsample / static_consistency_mask).
+        ``opacities`` (N,) optional per-point sigmoid opacity (soft static-
+        consistency prior); falls back to scalar ``opacity_init``.
         """
         self.device = device
         self.sh_degree = sh_degree
         pts_w, cols = points, colors
         n = pts_w.shape[0]
 
+        if opacities is None:
+            o = np.full(n, np.clip(opacity_init, 1e-3, 0.9))
+        else:
+            o = np.clip(opacities, 1e-3, 0.9)
         self.params = {
             "means": torch.nn.Parameter(torch.from_numpy(pts_w).float().to(device)),
             "quats": torch.nn.Parameter(
@@ -38,9 +41,7 @@ class GaussianModel:
                     torch.from_numpy(scales).float().to(device), 1e-4, 1.0
                 ))[:, None].repeat(1, 3)),
             "opacities": torch.nn.Parameter(
-                torch.full((n,), float(np.log(
-                    np.clip(opacity_init, 1e-3, 0.9) / (1 - np.clip(opacity_init, 1e-3, 0.9))
-                )), device=device)
+                torch.from_numpy(np.log(o / (1 - o))).float().to(device)
             ),
             "sh0": torch.nn.Parameter(
                 _rgb_to_sh0(torch.from_numpy(cols).float().to(device), sh_degree)
@@ -105,29 +106,28 @@ def unproject_frame(frame: dict, K: np.ndarray, stride: int = 4):
     return pts_w.astype(np.float32), cols.astype(np.float32), s.astype(np.float32)
 
 
-def static_consistency_mask(dataset, frame_idx: int, points: np.ndarray,
-                            n_ref: int = 4, tol_base: float = 0.05,
-                            tol_rel: float = 0.02, min_ratio: float = 0.5):
-    """True where `points` (from frame `frame_idx`) agree with other frames.
+def static_agreement_ratio(dataset, frame_idx: int, points: np.ndarray,
+                           n_ref: int = 4, tol_base: float = 0.08,
+                           tol_rel: float = 0.03):
+    """Per-point temporal agreement ratio in [0, 1] against `n_ref` other frames.
 
-    Points whose reprojection into `n_ref` other frames disagrees with the
-    observed depth (beyond tol_base + tol_rel*z) are dynamic-content shells
-    (robot/people/box) and must not enter the static map. Points never seen
-    by any reference frame (no valid observation) are dropped: unverifiable.
+    1.0 = reprojection depth agrees everywhere the point is observed;
+    0.0 = disagrees everywhere (dynamic shell) or never observed. Callers use
+    the ratio as a SOFT opacity prior instead of a hard drop — hard filtering
+    starved held-out views of obliquely-seen static surfaces (coverage 0.35).
     """
     n = points.shape[0]
     if n == 0:
-        return np.zeros(0, dtype=bool)
-    total = np.zeros(n, dtype=np.int32)
+        return np.zeros(0, dtype=np.float32)
+    total = np.zeros(n, dtype=np.float32)
     valid = np.zeros(n, dtype=np.int32)
     n_frames = len(dataset.samples)
     refs = np.linspace(0, n_frames - 1, min(n_ref + 1, n_frames)).astype(int)
     refs = [j for j in refs if abs(j - frame_idx) > 2][:n_ref]
     for j in refs:
         T_cw = dataset.samples[j][3]
-        P = points.T
-        z = T_cw[:3, :3] @ P
-        x = z[0] + T_cw[0, 3]; y = z[1] + T_cw[1, 3]; z = z[2] + T_cw[2, 3]
+        z0 = T_cw[:3, :3] @ points.T
+        x = z0[0] + T_cw[0, 3]; y = z0[1] + T_cw[1, 3]; z = z0[2] + T_cw[2, 3]
         dj = dataset._load_depth(dataset.samples[j][2])
         K = dataset.K
         ui = np.round(x / z * K[0, 0] + K[0, 2]).astype(np.int64)
@@ -140,8 +140,8 @@ def static_consistency_mask(dataset, frame_idx: int, points: np.ndarray,
         agree = seen & (np.abs(djv - z) < tol_base + tol_rel * z)
         total += agree
         valid += seen
-    need = np.maximum(1, (min_ratio * np.maximum(valid, 1)).astype(np.int32))
-    return (valid > 0) & (total >= need)
+    ratio = np.where(valid > 0, total / np.maximum(valid, 1), 0.0)
+    return ratio.astype(np.float32)
 
 
 def voxel_downsample(points: np.ndarray, colors: np.ndarray, voxel: float):

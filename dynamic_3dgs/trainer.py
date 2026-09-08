@@ -24,7 +24,7 @@ import torch.nn.functional as F
 from gsplat import rasterization
 
 from .dataset import TumFormatDataset
-from .model import GaussianModel, static_consistency_mask, unproject_frame
+from .model import GaussianModel, static_agreement_ratio, unproject_frame
 
 C0 = 0.28209479177387814
 
@@ -101,28 +101,38 @@ class Trainer:
         self.max_sh = self.model.sh_degree
 
     # ------------------------------------------------------------------ init
+    def _soft_opacity(self, ratio: np.ndarray) -> np.ndarray:
+        """Soft static-consistency opacity prior: consensus surfaces keep the
+        base opacity; dynamic shells / never-observed points start dim (they
+        can still grow if photometrically supported)."""
+        floor = float(self.cfg.get("sc_opacity_floor", 0.15))
+        base = float(self.cfg.get("opacity_init", 0.1))
+        return base * np.clip(floor + (1 - floor) * ratio, floor, 1.0)
+
     def _build_model(self, cfg: dict):
         t_indices = self.ds.train_indices
-        pts_all, cols_all, sc_all = [], [], []
+        pts_all, cols_all, sc_all, op_all = [], [], [], []
         for k, si in enumerate(t_indices):
             frame = self.ds.get_frame(int(si))
             p, c, s = unproject_frame(frame, self.ds.K, int(cfg.get("init_stride", 4)))
             if self.static_filter:
-                keep = static_consistency_mask(
+                ratio = static_agreement_ratio(
                     self.ds, int(si), p,
                     n_ref=int(cfg.get("sc_refs", 4)),
-                    tol_base=float(cfg.get("sc_tol_base", 0.05)),
-                    tol_rel=float(cfg.get("sc_tol_rel", 0.02)),
+                    tol_base=float(cfg.get("sc_tol_base", 0.08)),
+                    tol_rel=float(cfg.get("sc_tol_rel", 0.03)),
                 )
-                p, c, s = p[keep], c[keep], s[keep]
-            pts_all.append(p); cols_all.append(c); sc_all.append(s)
+                o = self._soft_opacity(ratio)
+            else:
+                o = np.full(p.shape[0], self.opacity_init, dtype=np.float32)
+            pts_all.append(p); cols_all.append(c); sc_all.append(s); op_all.append(o)
             if k % 100 == 0:
                 print(f"[trainer] init fuse {k}/{len(t_indices)} "
                       f"(kept {p.shape[0]})", flush=True)
         pts = np.concatenate(pts_all); cols = np.concatenate(cols_all)
-        scs = np.concatenate(sc_all)
+        scs = np.concatenate(sc_all); ops = np.concatenate(op_all)
         pts, idx = voxel_downsample_idx(pts, float(cfg.get("init_voxel", 0.02)))
-        cols, scs = cols[idx], scs[idx]
+        cols, scs, ops = cols[idx], scs[idx], ops[idx]
         print(f"[trainer] init cloud: {pts.shape[0]} points from {len(t_indices)} "
               f"train views (static_filter={self.static_filter})", flush=True)
         self.model = GaussianModel(
@@ -130,6 +140,7 @@ class Trainer:
             sh_degree=int(cfg.get("sh_degree", 3)),
             device=self.device,
             opacity_init=self.opacity_init,
+            opacities=ops,
         )
 
     # --------------------------------------------------------------- render
@@ -175,17 +186,20 @@ class Trainer:
         frac = float(self.cfg.get("final_lr_frac", 0.1))
         self.scheds = self.model.schedulers(self.opts, self.steps, final_lr_frac=frac)
 
-    def _insert(self, pts: np.ndarray, cols: np.ndarray, scs: np.ndarray):
+    def _insert(self, pts: np.ndarray, cols: np.ndarray, scs: np.ndarray,
+                opacities: np.ndarray | None = None):
         dev = self.device
         n = pts.shape[0]
+        if opacities is None:
+            o = np.full(n, np.clip(self.opacity_init, 1e-3, 0.9))
+        else:
+            o = np.clip(opacities, 1e-3, 0.9)
         new = {
             "means": torch.from_numpy(pts).float().to(dev),
             "quats": torch.tensor([[1.0, 0, 0, 0]], device=dev).repeat(n, 1),
             "scales": torch.log(torch.clamp(
                 torch.from_numpy(scs).float().to(dev), 1e-4, 1.0))[:, None].repeat(1, 3),
-            "opacities": torch.full((n,), float(np.log(
-                np.clip(self.opacity_init, 1e-3, 0.9) /
-                (1 - np.clip(self.opacity_init, 1e-3, 0.9)))), device=dev),
+            "opacities": torch.from_numpy(np.log(o / (1 - o))).float().to(dev),
             "sh0": ((torch.from_numpy(cols).float().to(dev) - 0.5) / C0).unsqueeze(1),
             "shN": torch.zeros(n, (self.max_sh + 1) ** 2 - 1, 3, device=dev),
         }
@@ -223,11 +237,14 @@ class Trainer:
             rgb = rgb * torch.exp(g)[None, :, None, None] + b[None, :, None, None]
             rgb = rgb.clamp(0.0, 1.0)
 
-        l1_rgb = torch.abs(rgb - rgb_gt).mean()
-        loss = (1 - self.dssim_weight) * l1_rgb + self.dssim_weight * ssim_loss(rgb, rgb_gt)
         cov = (alphas[0] >= self.depth_alpha_min) & (depth_gt[0, 0] > 0)
         l1_depth = (torch.abs(depth - depth_gt)[0, 0][cov]).mean() if bool(cov.any()) \
             else torch.zeros((), device=self.device)
+        # RGB also masked to covered pixels: uncovered ones render black and
+        # would dominate the loss; hole coverage is densification's job
+        l1_rgb = torch.abs(rgb - rgb_gt)[0, :, cov].mean() if bool(cov.any()) \
+            else torch.abs(rgb - rgb_gt).mean()
+        loss = (1 - self.dssim_weight) * l1_rgb + self.dssim_weight * ssim_loss(rgb, rgb_gt)
         loss = loss + self.depth_weight * l1_depth
         if self.use_exposure:
             loss = loss + 1e-3 * (self.exp_gain[row] ** 2).sum() \
@@ -294,15 +311,13 @@ class Trainer:
         pts_cam = np.stack([x, y, z], 1)
         T_wc = np.linalg.inv(frame["T_cw"].numpy())
         pts_w = (T_wc[:3, :3] @ pts_cam.T).T + T_wc[:3, 3]
-        keep = static_consistency_mask(self.ds, idx, pts_w)
-        pts_w, z = pts_w[keep], z[keep]
-        if pts_w.shape[0] == 0:
-            return 0
-        vi = v.astype(int)[m][keep]; ui = u.astype(int)[m][keep]
+        ratio = static_agreement_ratio(self.ds, idx, pts_w)
+        o = self._soft_opacity(ratio)
+        vi = v.astype(int)[m]; ui = u.astype(int)[m]
         cols = rgb_c[:, vi, ui].cpu().numpy().T  # (K,3)
         s = z / float(K[0, 0]) * 2.0  # ~2-pixel footprint
         self._insert(pts_w.astype(np.float32), cols.astype(np.float32),
-                     s.astype(np.float32))
+                     s.astype(np.float32), opacities=o.astype(np.float32))
         return int(pts_w.shape[0])
 
     # -------------------------------------------------------------- public
