@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--eval-stride", type=int, default=None)
     ap.add_argument("--train-frame-stride", type=int, default=None)
+    ap.add_argument("--lifecycle", default=None, choices=["off", "placebo", "retire", "full"])
     ap.add_argument("--tag", default="eval")
     args = ap.parse_args()
 
@@ -51,6 +52,8 @@ def main():
         cfg["dataset"]["max_frames"] = args.max_frames
     if args.eval_stride is not None:
         cfg["dataset"]["eval_stride"] = args.eval_stride
+    if args.lifecycle is not None:
+        cfg["lifecycle"] = args.lifecycle
     if args.train_frame_stride is not None:
         cfg["dataset"]["train_frame_stride"] = args.train_frame_stride
 
