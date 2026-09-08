@@ -1,0 +1,21 @@
+{
+  "exp_id": "baseline_vanilla",
+  "sequence": "rgbd_bonn_removing_nonobstructing_box",
+  "seed": 0,
+  "steps": 15000,
+  "n_frames": 492,
+  "n_train": 393,
+  "n_eval": 99,
+  "n_gaussians_final": 1218613,
+  "summary_eval": {
+    "tag": "eval",
+    "n_frames": 99,
+    "mean_psnr": 12.070561080840774,
+    "mean_ssim": 0.6574519384991039,
+    "mean_lpips": 0.7921816839112176,
+    "mean_depth_l1_cm": 136.37081938560564,
+    "mean_coverage": 0.8636747213325116
+  },
+  "model_file": "model.npz",
+  "code_state": "e43a51f7990e16b14f9ea0763cd486a060535609"
+}

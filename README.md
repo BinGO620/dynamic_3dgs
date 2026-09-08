@@ -35,6 +35,21 @@ python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstr
 python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstructing_box.yaml
 ```
 
+## 阶段0基线（2026-09-08，seed 0，姜伟恒 3090）
+
+vanilla 融合初始化 + 纯精调（真值位姿+深度，held-out 帧，判据与判决见
+`results/baseline_vanilla/`）：
+
+| 序列 | PSNR | SSIM | LPIPS | depth L1 (cm) | coverage |
+|---|---|---|---|---|---|
+| static | 10.96 | 0.617 | 0.795 | 135.1 | 0.861 |
+| removing_nobox | 12.07 | 0.657 | 0.792 | 136.4 | 0.864 |
+| placing_nobox | 11.25 | 0.616 | 0.882 | 143.4 | 0.861 |
+| kidnapping_box | 12.31 | 0.636 | 0.813 | 142.4 | 0.861 |
+
+**阶段0判决：G0.2 未达标（<20dB）→ 不进阶段1，先做阶段0.5 管线质量修复**
+（细节致密化阈值修复，见 NOTES 踩坑与 results/baseline_vanilla/README.md）。
+
 ## 目录结构
 
 ```

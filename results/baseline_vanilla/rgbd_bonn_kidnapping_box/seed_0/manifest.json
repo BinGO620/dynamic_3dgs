@@ -1,0 +1,21 @@
+{
+  "exp_id": "baseline_vanilla",
+  "sequence": "rgbd_bonn_kidnapping_box",
+  "seed": 0,
+  "steps": 15000,
+  "n_frames": 1089,
+  "n_train": 500,
+  "n_eval": 218,
+  "n_gaussians_final": 2542393,
+  "summary_eval": {
+    "tag": "eval",
+    "n_frames": 218,
+    "mean_psnr": 12.309081806511717,
+    "mean_ssim": 0.6360570703624585,
+    "mean_lpips": 0.8126808049481943,
+    "mean_depth_l1_cm": 142.3868374950295,
+    "mean_coverage": 0.8610176173372006
+  },
+  "model_file": "model.npz",
+  "code_state": "e43a51f7990e16b14f9ea0763cd486a060535609"
+}

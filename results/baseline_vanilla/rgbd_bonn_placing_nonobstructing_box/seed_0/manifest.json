@@ -1,0 +1,21 @@
+{
+  "exp_id": "baseline_vanilla",
+  "sequence": "rgbd_bonn_placing_nonobstructing_box",
+  "seed": 0,
+  "steps": 15000,
+  "n_frames": 718,
+  "n_train": 500,
+  "n_eval": 144,
+  "n_gaussians_final": 1682359,
+  "summary_eval": {
+    "tag": "eval",
+    "n_frames": 144,
+    "mean_psnr": 11.253395940997054,
+    "mean_ssim": 0.6157987589637438,
+    "mean_lpips": 0.8822354715731409,
+    "mean_depth_l1_cm": 143.35875891976886,
+    "mean_coverage": 0.8609340182609029
+  },
+  "model_file": "model.npz",
+  "code_state": "e43a51f7990e16b14f9ea0763cd486a060535609"
+}

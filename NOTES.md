@@ -4,7 +4,7 @@
 
 | # | 日期 | 实验 | 状态 | 一句话结论 |
 |---|---|---|---|---|
-| 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | 🔄 进行 | 3090 GPU1 跑 static；chenfan V100 待 env 装完跑 3 个 transition 序列。判据 G0.1-G0.4（ROADMAP §3.2）。G0.1 ✅、L2 ✅（diff=0.000 同seed全确定）。两轮关键 bug 修复：init 位姿方向反（T_cw→T_wc）+ 初始尺度用场景跨度（米级大团块，应为最近邻距离）→ 修复后 4000 步验证健康（l1_rgb 0.07-0.24、致密化正常生长、eval PSNR 18.4 爬升中） |
+| 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | ✅ 完成 | 四序列 rc=0（姜伟恒3090）。**G0.2 未达标**：held-out PSNR 11-12dB（目标≥20），depth L1 135-143cm。G0.1/G0.4 ✅（L2 diff=0.000，跨机逐值一致）；G0.3 ⚠️ 2/3（placing 2.37✓ kidnapping 3.10✓ removing 1.96✗）。**判决：不进阶段1，先做阶段0.5管线质量修复**（细节致密化阈值修复）。verdict: results/baseline_vanilla/evidence/verdict.md |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
 
@@ -16,7 +16,16 @@
 
 ## 已验证结论
 
-（项目新建于 2026-09-08，尚无本地验证结论。继承自 monogs-ours 的机制设计约束
+- **阶段0基线判决（2026-09-08，baseline_vanilla，姜伟恒3090，seed0）**：
+  融合初始化+纯精调在 Bonn 四序列 held-out PSNR 11-12dB，远低于 20dB 门槛。
+  归因证据：①depth-consistent 像素 PSNR 18dB vs 全图 12dB → 移动机器人/box
+  残影拖累是真实构成部分；②无细节致密化（ADC 阈值语义失效，见踩坑）是主因。
+  G0.3 凹陷信号存在（placing 2.37dB、kidnapping 3.10dB）但噪声地板高。
+  **已验证：同 seed 同 config 跨机（3090/V100）训练轨迹逐值一致**——管线确定性
+  成立，配对机制实验的内部效度有保障。修复路径见
+  results/baseline_vanilla/README.md 下一步。
+
+（项目新建于 2026-09-08，其余继承自 monogs-ours 的机制设计约束
 已固化在 ROADMAP.md §2，不在此重复。）
 
 ## 工程备忘

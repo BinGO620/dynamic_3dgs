@@ -1,0 +1,21 @@
+{
+  "exp_id": "baseline_vanilla",
+  "sequence": "rgbd_bonn_static",
+  "seed": 0,
+  "steps": 15000,
+  "n_frames": 10009,
+  "n_train": 500,
+  "n_eval": 2002,
+  "n_gaussians_final": 3889068,
+  "summary_eval": {
+    "tag": "eval",
+    "n_frames": 2002,
+    "mean_psnr": 10.956707822955101,
+    "mean_ssim": 0.6167340820485895,
+    "mean_lpips": 0.7949101810271924,
+    "mean_depth_l1_cm": 135.08045239286585,
+    "mean_coverage": 0.8608240858836845
+  },
+  "model_file": "model.npz",
+  "code_state": "e43a51f7990e16b14f9ea0763cd486a060535609"
+}
