@@ -302,15 +302,18 @@ class Trainer:
 
         Reuses the init-time agreement machinery on the CURRENT parameter
         positions; runs every retire_every steps (O(N x n_ref) numpy)."""
-        from .model import static_agreement_ratio
         pts = self.model.params["means"].detach().cpu().numpy()
-        n_ref = int(self.cfg.get("sc_refs", 4))
-        ratio = static_agreement_ratio(
-            self.ds, int(step) % max(len(self.ds), 1), pts,
-            n_ref=n_ref,
-            tol_base=float(self.cfg.get("sc_tol_base", 0.08)),
-            tol_rel=float(self.cfg.get("sc_tol_rel", 0.03)),
-        )
+        if self.lifecycle == "placebo":
+            # P1: same update schedule and thresholds, evidence = noise
+            ratio = self._rng.random(pts.shape[0]).astype(np.float32)
+        else:
+            from .model import static_agreement_ratio
+            ratio = static_agreement_ratio(
+                self.ds, int(step) % max(len(self.ds), 1), pts,
+                n_ref=int(self.cfg.get("sc_refs", 4)),
+                tol_base=float(self.cfg.get("sc_tol_base", 0.08)),
+                tol_rel=float(self.cfg.get("sc_tol_rel", 0.03)),
+            )
         ev = torch.from_numpy(ratio).float().to(self.model.ledger["evidence"].device)
         with torch.no_grad():
             self.model.ledger["evidence"].mul_(1 - self.ev_tau).add_(ev, alpha=self.ev_tau)
