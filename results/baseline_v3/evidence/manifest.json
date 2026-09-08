@@ -1,0 +1,51 @@
+{
+  "exp_id": "baseline_v3",
+  "date": "2026-09-09",
+  "code_head": "e52355c",
+  "machine": "jiangwenheng 3090 GPU1",
+  "seed": 0,
+  "steps": 15000,
+  "protocol": "ROADMAP A5 (soft static-consistency opacity prior, exposure comp, footprint scale, depth-residual densification, SH ramp, prune)",
+  "runs": {
+    "static": {
+      "tag": "eval",
+      "n_frames": 2002,
+      "mean_psnr": 11.63963897248323,
+      "mean_ssim": 0.6048173843087493,
+      "mean_lpips": 0.8253610276735269,
+      "mean_depth_l1_cm": 42.93557644396514,
+      "mean_coverage": 0.8372980751149304,
+      "mean_psnr_static_cons": 12.228850183036686
+    },
+    "removing_nonobstructing_box": {
+      "tag": "eval",
+      "n_frames": 99,
+      "mean_psnr": 13.335904580112466,
+      "mean_ssim": 0.6514286260412196,
+      "mean_lpips": 0.7177461945649349,
+      "mean_depth_l1_cm": 33.98073979399421,
+      "mean_coverage": 0.8630251270351987,
+      "mean_psnr_static_cons": 14.85693186033564
+    },
+    "placing_nonobstructing_box": {
+      "tag": "eval",
+      "n_frames": 144,
+      "mean_psnr": 11.802749923234655,
+      "mean_ssim": 0.6049323976039886,
+      "mean_lpips": 0.7566083326107926,
+      "mean_depth_l1_cm": 37.71491079694695,
+      "mean_coverage": 0.8593218740489748,
+      "mean_psnr_static_cons": 13.390084877070244
+    },
+    "kidnapping_box": {
+      "tag": "eval",
+      "n_frames": 218,
+      "mean_psnr": 12.430401909200672,
+      "mean_ssim": 0.605903006748322,
+      "mean_lpips": 0.7729226003546233,
+      "mean_depth_l1_cm": 48.98531121124915,
+      "mean_coverage": 0.8577404003077691,
+      "mean_psnr_static_cons": 13.288609282169471
+    }
+  }
+}

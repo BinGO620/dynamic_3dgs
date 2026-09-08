@@ -1,0 +1,20 @@
+{
+  "rgbd_bonn_removing_nonobstructing_box": {
+    "median_psnr": 13.44,
+    "min_psnr": 8.91,
+    "max_dip_db": 4.54,
+    "dip_rel_pos": 0.79
+  },
+  "rgbd_bonn_placing_nonobstructing_box": {
+    "median_psnr": 11.89,
+    "min_psnr": 9.27,
+    "max_dip_db": 2.63,
+    "dip_rel_pos": 0.33
+  },
+  "rgbd_bonn_kidnapping_box": {
+    "median_psnr": 12.44,
+    "min_psnr": 9.9,
+    "max_dip_db": 2.54,
+    "dip_rel_pos": 0.89
+  }
+}
