@@ -24,9 +24,13 @@ ARMS = ["C0", "P1", "Ma", "Mb"]
 
 
 def _run_dir(root: str, arm: str, seq: str) -> str:
-    # C0 lives in lifecycle_gate/{seq}; arms in lifecycle_gate_{arm}/{seq}
-    if arm == "C0":
-        return f"{root}/lifecycle_gate/{seq}/seed_0"
+    import os
+    # round-1: C0 in lifecycle_gate/{seq}; E0 round: all arms suffixed
+    for cand in (f"{root}/lifecycle_gate_{arm}/{seq}/seed_0",
+                 f"{root}/lifecycle_gate/{seq}_{arm}/seed_0",
+                 f"{root}/lifecycle_gate/{seq}/seed_0"):
+        if os.path.isdir(cand):
+            return cand
     return f"{root}/lifecycle_gate_{arm}/{seq}/seed_0"
 
 
