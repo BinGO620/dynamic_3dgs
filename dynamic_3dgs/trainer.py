@@ -227,6 +227,8 @@ class Trainer:
         for k, p in self.model.params.items():
             self.model.params[k] = torch.nn.Parameter(
                 p.data[keep], requires_grad=p.requires_grad)
+        if hasattr(self.model, "ledger"):
+            self.model.ledger_prune_keep(keep)
         self._rebuild_opts()
         return int((~keep).sum())
 
