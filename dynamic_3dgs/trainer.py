@@ -90,6 +90,7 @@ class Trainer:
         self.scheds = self.model.schedulers(self.opts, int(cfg.get("steps", 15000)))
         self.depth_weight = float(cfg.get("depth_weight", 0.15))
         self.depth_alpha_min = float(cfg.get("depth_alpha_min", 0.5))
+        self.scale_max = float(cfg.get("scale_max", 0.08))  # metres
         self.dssim_weight = float(cfg.get("dssim_weight", 0.2))
         self.steps = int(cfg.get("steps", 15000))
         self.n_train = len(dataset.train_indices)
@@ -187,6 +188,12 @@ class Trainer:
         for o in self.opts.values():
             o.step()
             o.zero_grad(set_to_none=True)
+        if not self.use_adc:
+            # without ADC nothing caps scale growth; a giant gaussian near the
+            # camera can occlude whole views, so hard-clamp to s_max
+            s_max = float(np.log(self.scale_max))
+            with torch.no_grad():
+                self.model.params["scales"].clamp_(max=s_max)
         for s in self.scheds.values():
             s.step()
 
