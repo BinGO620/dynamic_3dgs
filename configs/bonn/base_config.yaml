@@ -13,12 +13,26 @@ lr_sh0: 2.5e-3
 lr_shN: 1.25e-4
 dssim_weight: 0.2
 depth_weight: 0.15
-# densification (vanilla 3DGS defaults via gsplat DefaultStrategy)
-grow_grad2d: 0.0002
-grow_scale3d: 0.01
-prune_opa: 0.005
-refine_every: 100
-reset_every: 3000
+
+# stage-0.5 protocol (Codex review + literature)
+use_adc: false
+static_filter: true
+sc_refs: 4
+sc_tol_base: 0.05
+sc_tol_rel: 0.02
+use_exposure: true
+opacity_init: 0.1
+lr_scales: 2.5e-3
+final_lr_frac: 0.1
+sh_ramp: true
+scale_max: 0.08
+densify_every: 250
+densify_start: 2000
+densify_max_px: 3000
+densify_depth_thr: 0.2
+densify_alpha_thr: 0.4
+prune_every: 2000
+prune_opa: 0.01
 
 dataset:
   type: bonn

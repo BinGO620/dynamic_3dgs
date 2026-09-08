@@ -1,0 +1,22 @@
+{
+  "exp_id": "smoke_v2",
+  "sequence": "rgbd_bonn_static",
+  "seed": 0,
+  "steps": 3000,
+  "n_frames": 100,
+  "n_train": 80,
+  "n_eval": 20,
+  "n_gaussians_final": 166796,
+  "summary_eval": {
+    "tag": "eval",
+    "n_frames": 20,
+    "mean_psnr": 13.816336053548957,
+    "mean_ssim": 0.6113162100315094,
+    "mean_lpips": 0.7024950474500656,
+    "mean_depth_l1_cm": 17.41165030747652,
+    "mean_coverage": 0.8166323393583298,
+    "mean_psnr_static_cons": 15.846951023230503
+  },
+  "model_file": "model.npz",
+  "code_state": "a1dd510881ba9c1562a68453f022352d1fe6722f"
+}

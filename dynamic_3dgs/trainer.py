@@ -1,7 +1,15 @@
 """Offline vanilla 3DGS trainer on gsplat (renderer decoupled from monogs-ours).
 
-GT poses + GT depth supervision; adaptive density control via
-gsplat.strategy.DefaultStrategy (vanilla clone/split/prune semantics).
+Stage-0.5 protocol (evidence: NOTES 踩坑 + Codex review + literature):
+- fused init from ALL training views, filtered by temporal static consistency
+  (dynamic shells — robot/people/box — must not enter the map);
+- per-point pixel-footprint scale init (z/focal * stride);
+- per-view exposure compensation (log-gain + bias, regularized);
+- SH degree ramp 0->max (degree-3 from step 0 encodes ghosts/exposure);
+- depth-residual densification: insert static-consistent points where the
+  render has holes (alpha<0.4) or depth residual > 20cm (replaces the broken
+  gsplat DefaultStrategy gradient machinery, see NOTES);
+- periodic low-opacity prune; scale clamp as a safety net.
 """
 
 from __future__ import annotations
@@ -14,17 +22,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from gsplat import rasterization
-from gsplat.strategy import DefaultStrategy
 
 from .dataset import TumFormatDataset
-from .model import GaussianModel, unproject_frame, voxel_downsample
+from .model import GaussianModel, static_consistency_mask, unproject_frame
 
 C0 = 0.28209479177387814
-
-
-def sh_coeff_to_rgb(sh: torch.Tensor, dirs: torch.Tensor | None = None) -> torch.Tensor:
-    """DC-only color (sh0). Higher bands handled inside rasterization."""
-    return torch.clamp(sh[..., 0, :] * C0 + 0.5, 0.0, 1.0)
 
 
 def ssim_loss(img1: torch.Tensor, img2: torch.Tensor, window_size: int = 11) -> torch.Tensor:
@@ -55,151 +57,255 @@ class Trainer:
         self.K = torch.from_numpy(dataset.K.astype(np.float32)).to(device)
         self.width, self.height = dataset.width, dataset.height
 
-        t_indices = dataset.train_indices
-        # init cloud from the training views themselves (depth-fused dense init):
-        # every gaussian's birth frame is known, and coverage matches what the
-        # baseline trains on. Without ADC there is no hole-filling, so training
-        # and eval rely on this union of frustums.
-        pts_all, cols_all = [], []
-        cap = int(cfg.get("init_max_views", len(t_indices)))
-        sel = np.linspace(0, len(t_indices) - 1, min(cap, len(t_indices))).astype(int)
-        for si in sel:
-            frame = dataset.get_frame(int(t_indices[si]))
-            p, c = unproject_frame(frame, dataset.K, int(cfg.get("init_stride", 4)))
-            pts_all.append(p)
-            cols_all.append(c)
-        pts = np.concatenate(pts_all)
-        cols = np.concatenate(cols_all)
-        pts, cols = voxel_downsample(pts, cols, float(cfg.get("init_voxel", 0.02)))
-        print(f"[trainer] init cloud: {pts.shape[0]} points "
-              f"from {len(sel)} train views (voxel {cfg.get('init_voxel', 0.02)}m)", flush=True)
-        self.model = GaussianModel(
-            pts, cols,
-            sh_degree=int(cfg.get("sh_degree", 3)),
-            device=device,
-        )
-        lrs = {
-            "means": cfg.get("lr_means", 1.6e-4),
-            "quats": cfg.get("lr_quats", 1e-3),
-            "scales": cfg.get("lr_scales", 5e-3),
-            "opacities": cfg.get("lr_opacities", 5e-2),
-            "sh0": cfg.get("lr_sh0", 2.5e-3),
-            "shN": cfg.get("lr_shN", 2.5e-3 / 20),
-        }
-        self.opts = self.model.optimizers(lrs)
-        self.scheds = self.model.schedulers(self.opts, int(cfg.get("steps", 15000)))
+        self.steps = int(cfg.get("steps", 15000))
         self.depth_weight = float(cfg.get("depth_weight", 0.15))
         self.depth_alpha_min = float(cfg.get("depth_alpha_min", 0.5))
-        self.scale_max = float(cfg.get("scale_max", 0.08))  # metres
+        self.scale_max = float(cfg.get("scale_max", 0.08))
         self.dssim_weight = float(cfg.get("dssim_weight", 0.2))
-        self.steps = int(cfg.get("steps", 15000))
+        self.opacity_init = float(cfg.get("opacity_init", 0.1))
+        self.static_filter = bool(cfg.get("static_filter", True))
+        self.densify_every = int(cfg.get("densify_every", 250))
+        self.densify_start = int(cfg.get("densify_start", 2000))
+        self.densify_max_px = int(cfg.get("densify_max_px", 3000))
+        self.densify_depth_thr = float(cfg.get("densify_depth_thr", 0.2))
+        self.densify_alpha_thr = float(cfg.get("densify_alpha_thr", 0.4))
+        self.prune_every = int(cfg.get("prune_every", 2000))
+        self.prune_opa = float(cfg.get("prune_opa", 0.01))
         self.n_train = len(dataset.train_indices)
         self._rng = np.random.default_rng(int(cfg.get("seed", 0)))
 
-        self.use_adc = bool(cfg.get("use_adc", False))
-        if self.use_adc:
-            self.strategy = DefaultStrategy(
-                prune_opa=cfg.get("prune_opa", 0.005),
-                grow_grad2d=cfg.get("grow_grad2d", 0.0002),
-                grow_scale3d=cfg.get("grow_scale3d", 0.01),
-                grow_scale2d=cfg.get("grow_scale2d", 0.05),
-                refine_start_iter=cfg.get("refine_start_iter", 500),
-                refine_stop_iter=self.steps,
-                reset_every=cfg.get("reset_every", 3000),
-                refine_every=cfg.get("refine_every", 100),
-                revised_opacity=True,
-                verbose=False,
-            )
-            # gsplat's DefaultStrategy defaults assume a UNIT-normalized scene.
-            # Our scales are in metres; keep scene_scale=1.0 so grow boundary
-            # = 1cm and prune ceiling = 10cm.
-            scene_scale = float(cfg.get("scene_scale", 1.0))
-            self.strategy_state = self.strategy.initialize_state(
-                scene_scale=scene_scale
-            )
-        else:
-            self.strategy = None
-            self.strategy_state = None
+        self._build_model(cfg)
 
-    def render(self, frame: dict):
+        lrs = {
+            "means": cfg.get("lr_means", 1.6e-4),
+            "quats": cfg.get("lr_quats", 1e-3),
+            "scales": cfg.get("lr_scales", 2.5e-3),
+            "opacities": cfg.get("lr_opacities", 5e-2),
+            "sh0": cfg.get("lr_sh0", 2.5e-3),
+            "shN": cfg.get("lr_shN", 1.25e-4),
+        }
+        self.opts = self.model.optimizers(lrs)
+        frac = float(cfg.get("final_lr_frac", 0.1))
+        self.scheds = self.model.schedulers(self.opts, self.steps, final_lr_frac=frac)
+        # per-training-view exposure compensation (log-gain, bias) per channel
+        self.use_exposure = bool(cfg.get("use_exposure", True))
+        if self.use_exposure:
+            self.exp_gain = torch.zeros(self.n_train, 3, device=device, requires_grad=True)
+            self.exp_bias = torch.zeros(self.n_train, 3, device=device, requires_grad=True)
+            self.opt_exp = torch.optim.Adam(
+                [{"params": [self.exp_gain], "lr": 5e-3},
+                 {"params": [self.exp_bias], "lr": 5e-3}])
+        else:
+            self.exp_gain = self.exp_bias = self.opt_exp = None
+        self._train_row = {int(v): k for k, v in enumerate(dataset.train_indices)}
+        self.max_sh = self.model.sh_degree
+
+    # ------------------------------------------------------------------ init
+    def _build_model(self, cfg: dict):
+        t_indices = self.ds.train_indices
+        pts_all, cols_all, sc_all = [], [], []
+        for k, si in enumerate(t_indices):
+            frame = self.ds.get_frame(int(si))
+            p, c, s = unproject_frame(frame, self.ds.K, int(cfg.get("init_stride", 4)))
+            if self.static_filter:
+                keep = static_consistency_mask(
+                    self.ds, int(si), p,
+                    n_ref=int(cfg.get("sc_refs", 4)),
+                    tol_base=float(cfg.get("sc_tol_base", 0.05)),
+                    tol_rel=float(cfg.get("sc_tol_rel", 0.02)),
+                )
+                p, c, s = p[keep], c[keep], s[keep]
+            pts_all.append(p); cols_all.append(c); sc_all.append(s)
+            if k % 100 == 0:
+                print(f"[trainer] init fuse {k}/{len(t_indices)} "
+                      f"(kept {p.shape[0]})", flush=True)
+        pts = np.concatenate(pts_all); cols = np.concatenate(cols_all)
+        scs = np.concatenate(sc_all)
+        pts, idx = voxel_downsample_idx(pts, float(cfg.get("init_voxel", 0.02)))
+        cols, scs = cols[idx], scs[idx]
+        print(f"[trainer] init cloud: {pts.shape[0]} points from {len(t_indices)} "
+              f"train views (static_filter={self.static_filter})", flush=True)
+        self.model = GaussianModel(
+            pts, cols, scs,
+            sh_degree=int(cfg.get("sh_degree", 3)),
+            device=self.device,
+            opacity_init=self.opacity_init,
+        )
+
+    # --------------------------------------------------------------- render
+    def active_sh_degree(self, step: int) -> int:
+        ramp = int(self.cfg.get("sh_ramp", 1))
+        if not ramp:
+            return self.max_sh
+        # degree d unlocked at 2000*(d+1) steps (0deg: 0-2k, 1: 2-4k, 2: 4-6k, 3: 6k+)
+        d = max(0, (step // 2000) - 1)
+        return min(d, self.max_sh)
+
+    def render(self, frame: dict, step: int | None = None):
         T = frame["T_cw"].to(self.device)
-        viewmat = T[None]  # (1,4,4) w2c
-        K = self.K[None]
         params = self.model.params
-        sh = torch.cat([params["sh0"], params["shN"]], dim=1)  # (N,K,3)
-        max_sh = int(np.log2(sh.shape[1] - 1)) if sh.shape[1] > 1 else 0
+        sh = torch.cat([params["sh0"], params["shN"]], dim=1)
+        deg = self.active_sh_degree(step) if step is not None else self.max_sh
         renders, alphas, info = rasterization(
             params["means"],
             torch.nn.functional.normalize(params["quats"], dim=-1),
             torch.exp(params["scales"]),
             torch.sigmoid(params["opacities"]),
-            sh,  # colors: SH coefficients (used when sh_degree is set)
-            viewmat,
-            K,
+            sh,
+            T[None],
+            self.K[None],
             self.width,
             self.height,
-            sh_degree=max_sh,
-            render_mode="RGB+ED",  # ED = expected depth (alpha-normalized); raw
-            # accumulated "D" is biased toward the camera wherever alpha < 1
+            sh_degree=deg,
+            render_mode="RGB+ED",
             near_plane=0.01,
             far_plane=1e10,
-            backgrounds=None,
-            packed=False,  # must match DefaultStrategy.step_post_backward(packed=False)
-            absgrad=False,
+            packed=False,
         )
-        # gsplat returns alphas as (C, H, W, 1); drop the trailing dim
+        # gsplat quirk: renders height-first (C,H,W,D); alphas (C,H,W,1)
         if alphas.dim() == 4:
             alphas = alphas[..., 0]
         return renders, alphas, info
-        return renders, alphas, info
 
+    # ------------------------------------------------------- param surgery
+    def _rebuild_opts(self):
+        lrs = {g["name"]: g["lr"] for o in self.opts.values()
+               for g in o.param_groups if "name" in g}
+        self.opts = self.model.optimizers(lrs)
+        frac = float(self.cfg.get("final_lr_frac", 0.1))
+        self.scheds = self.model.schedulers(self.opts, self.steps, final_lr_frac=frac)
+
+    def _insert(self, pts: np.ndarray, cols: np.ndarray, scs: np.ndarray):
+        dev = self.device
+        n = pts.shape[0]
+        new = {
+            "means": torch.from_numpy(pts).float().to(dev),
+            "quats": torch.tensor([[1.0, 0, 0, 0]], device=dev).repeat(n, 1),
+            "scales": torch.log(torch.clamp(
+                torch.from_numpy(scs).float().to(dev), 1e-4, 1.0))[:, None].repeat(1, 3),
+            "opacities": torch.full((n,), float(np.log(
+                np.clip(self.opacity_init, 1e-3, 0.9) /
+                (1 - np.clip(self.opacity_init, 1e-3, 0.9)))), device=dev),
+            "sh0": ((torch.from_numpy(cols).float().to(dev) - 0.5) / C0).unsqueeze(1),
+            "shN": torch.zeros(n, (self.max_sh + 1) ** 2 - 1, 3, device=dev),
+        }
+        for k, p in self.model.params.items():
+            self.model.params[k] = torch.nn.Parameter(
+                torch.cat([p.data, new[k]]), requires_grad=p.requires_grad)
+        self._rebuild_opts()
+
+    def _prune_low_opacity(self):
+        with torch.no_grad():
+            keep = torch.sigmoid(self.model.params["opacities"]) >= self.prune_opa
+        if bool(keep.all()):
+            return 0
+        for k, p in self.model.params.items():
+            self.model.params[k] = torch.nn.Parameter(
+                p.data[keep], requires_grad=p.requires_grad)
+        self._rebuild_opts()
+        return int((~keep).sum())
+
+    # ----------------------------------------------------------- train step
     def train_step(self, step: int) -> dict:
-        idx = int(self.ds.train_indices[self._rng.integers(self.n_train)])
+        row = int(self._rng.integers(self.n_train))
+        idx = int(self.ds.train_indices[row])
         frame = self.ds.get_frame(idx)
-        rgb_gt = frame["rgb"].to(self.device)[None]  # (1,3,H,W)
-        depth_gt = frame["depth"].to(self.device)[None, None]  # (1,1,H,W)
+        rgb_gt = frame["rgb"].to(self.device)[None]
+        depth_gt = frame["depth"].to(self.device)[None, None]
 
-        renders, alphas, info = self.render(frame)
-        rgb = renders[0, :, :, :3].permute(2, 0, 1)[None]  # (1,3,H,W)
+        renders, alphas, info = self.render(frame, step)
+        rgb = renders[0, :, :, :3].permute(2, 0, 1)[None]
         depth = renders[0, :, :, 3][None, None]
 
-        if self.use_adc:
-            self.strategy.step_pre_backward(
-                self.model.params, self.opts, self.strategy_state, step, info
-            )
+        if self.use_exposure:
+            g = self.exp_gain[row]
+            b = self.exp_bias[row]
+            rgb = rgb * torch.exp(g)[None, :, None, None] + b[None, :, None, None]
+            rgb = rgb.clamp(0.0, 1.0)
 
         l1_rgb = torch.abs(rgb - rgb_gt).mean()
         loss = (1 - self.dssim_weight) * l1_rgb + self.dssim_weight * ssim_loss(rgb, rgb_gt)
-        # depth loss on pixels the render actually covers (alpha >= a_min):
-        # counting holes as |0 - gt| would dominate the loss with metres-scale
-        # gradients and prevent RGB optimization entirely
-        a_min = self.depth_alpha_min
-        cov = (alphas[0] >= a_min) & (depth_gt[0, 0] > 0)
+        cov = (alphas[0] >= self.depth_alpha_min) & (depth_gt[0, 0] > 0)
         l1_depth = (torch.abs(depth - depth_gt)[0, 0][cov]).mean() if bool(cov.any()) \
             else torch.zeros((), device=self.device)
         loss = loss + self.depth_weight * l1_depth
+        if self.use_exposure:
+            loss = loss + 1e-3 * (self.exp_gain[row] ** 2).sum() \
+                        + 1e-3 * (self.exp_bias[row] ** 2).sum()
 
         loss.backward()
-        if self.use_adc:
-            self.strategy.step_post_backward(
-                self.model.params, self.opts, self.strategy_state, step, info
-            )
-
         for o in self.opts.values():
             o.step()
             o.zero_grad(set_to_none=True)
-        if not self.use_adc:
-            # without ADC nothing caps scale growth; a giant gaussian near the
-            # camera can occlude whole views, so hard-clamp to s_max
-            s_max = float(np.log(self.scale_max))
-            with torch.no_grad():
-                self.model.params["scales"].clamp_(max=s_max)
+        if self.use_exposure:
+            self.opt_exp.step()
+            self.opt_exp.zero_grad(set_to_none=True)
+        with torch.no_grad():
+            self.model.params["scales"].clamp_(max=float(np.log(self.scale_max)))
         for s in self.scheds.values():
             s.step()
 
-        return {"loss": float(loss.item()), "l1_rgb": float(l1_rgb.item()),
-                "l1_depth": float(l1_depth.item()), "n_gauss": self.model.n_gaussians}
+        densified = 0
+        if self.densify_every and step >= self.densify_start and step % self.densify_every == 0:
+            densified = self._densify_residual(step)
+        pruned = 0
+        if self.prune_every and step % self.prune_every == 0:
+            pruned = self._prune_low_opacity()
 
+        return {"loss": float(loss.item()), "l1_rgb": float(l1_rgb.item()),
+                "l1_depth": float(l1_depth.item()) if cov.any() else float("nan"),
+                "n_gauss": self.model.n_gaussians,
+                "inserted": densified, "pruned": pruned}
+
+    def _densify_residual(self, step: int) -> int:
+        """Insert static-consistent points where the render has holes or large
+        depth residuals (SplaTAM-style, using GT depth — no gradient ADC)."""
+        row = int(self._rng.integers(self.n_train))
+        idx = int(self.ds.train_indices[row])
+        frame = self.ds.get_frame(idx)
+        with torch.no_grad():
+            renders, alphas, _ = self.render(frame, step)
+            rgb_c = renders[0, :, :, :3].permute(2, 0, 1)
+            if self.use_exposure:
+                g = self.exp_gain[row]; b = self.exp_bias[row]
+                rgb_c = (rgb_c * torch.exp(g)[:, None, None] + b[:, None, None]).clamp(0, 1)
+            depth = renders[0, :, :, 3]
+            alpha = alphas[0]
+        gt = frame["depth"].to(self.device)
+        err_mask = (gt > 0) & (alpha < self.densify_alpha_thr) | \
+                   ((gt > 0) & (alpha >= self.densify_alpha_thr) &
+                    ((depth - gt).abs() > self.densify_depth_thr))
+        cand = err_mask.nonzero().cpu()
+        if cand.shape[0] == 0:
+            return 0
+        sel = cand[self._rng.choice(cand.shape[0],
+                    size=min(self.densify_max_px, cand.shape[0]), replace=False)]
+        v = sel[:, 0].numpy().astype(np.float32)
+        u = sel[:, 1].numpy().astype(np.float32)
+        gt_np = frame["depth"].numpy()
+        z = gt_np[v.astype(int), u.astype(int)]
+        m = z > 0
+        u, v, z = u[m], v[m], z[m]
+        if z.size == 0:
+            return 0
+        K = self.ds.K
+        x = (u - K[0, 2]) / K[0, 0] * z
+        y = (v - K[1, 2]) / K[1, 1] * z
+        pts_cam = np.stack([x, y, z], 1)
+        T_wc = np.linalg.inv(frame["T_cw"].numpy())
+        pts_w = (T_wc[:3, :3] @ pts_cam.T).T + T_wc[:3, 3]
+        keep = static_consistency_mask(self.ds, idx, pts_w)
+        pts_w, z = pts_w[keep], z[keep]
+        if pts_w.shape[0] == 0:
+            return 0
+        vi = v.astype(int)[m][keep]; ui = u.astype(int)[m][keep]
+        cols = rgb_c[:, vi, ui].cpu().numpy().T  # (K,3)
+        s = z / float(K[0, 0]) * 2.0  # ~2-pixel footprint
+        self._insert(pts_w.astype(np.float32), cols.astype(np.float32),
+                     s.astype(np.float32))
+        return int(pts_w.shape[0])
+
+    # -------------------------------------------------------------- public
     def train(self, log_every: int = 500) -> list:
         log = []
         t_start = time.time()
@@ -211,9 +317,18 @@ class Trainer:
                 log.append(stats)
                 print(f"[step {step:6d}] loss={stats['loss']:.4f} "
                       f"l1_rgb={stats['l1_rgb']:.4f} l1_depth={stats['l1_depth']:.4f} "
-                      f"n_gauss={stats['n_gauss']}", flush=True)
+                      f"n={stats['n_gauss']} ins={stats['inserted']} "
+                      f"pru={stats['pruned']}", flush=True)
         return log
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         np.savez_compressed(path, **self.model.state_dict())
+
+
+def voxel_downsample_idx(points: np.ndarray, voxel: float) -> tuple:
+    """First-occurrence-per-voxel downsample; returns (points, keep_idx)."""
+    keys = np.floor(points / voxel).astype(np.int64)
+    _, idx = np.unique(keys, axis=0, return_index=True)
+    idx = np.sort(idx)
+    return points[idx], idx

@@ -71,6 +71,11 @@ class PhotometricEvaluator:
                 if bool(covered.any()) else None,
                 "coverage": float(covered.float().mean()),
             }
+            # static-region PSNR: pixels where rendered geometry agrees with GT
+            # depth (non-ghost region) — the headline quality of the static map
+            stat = covered & (torch.abs(depth_pred - depth_gt) < 0.2)
+            row["psnr_static_cons"] = _psnr(rgb_pred[:, stat], rgb_gt[:, stat]) \
+                if bool(stat.any()) else None
             rows.append(row)
 
         def _mean(key: str) -> float:
@@ -86,6 +91,7 @@ class PhotometricEvaluator:
             "mean_lpips": _mean("lpips"),
             "mean_depth_l1_cm": _mean("depth_l1_cm"),
             "mean_coverage": _mean("coverage"),
+            "mean_psnr_static_cons": _mean("psnr_static_cons"),
         }
 
         if save_dir:
