@@ -35,3 +35,4 @@ dist/
 cache/
 *.ckpt
 wandb/
+results/**/*.npz
