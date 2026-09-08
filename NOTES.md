@@ -6,6 +6,7 @@
 |---|---|---|---|---|
 | 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | ✅ 完成 | 四序列 rc=0（姜伟恒3090）。**G0.2 未达标**：held-out PSNR 11-12dB（目标≥20），depth L1 135-143cm。G0.1/G0.4 ✅（L2 diff=0.000，跨机逐值一致）；G0.3 ⚠️ 2/3（placing 2.37✓ kidnapping 3.10✓ removing 1.96✗）。**判决：不进阶段1，先做阶段0.5管线质量修复**（细节致密化阈值修复）。verdict: results/baseline_vanilla/evidence/verdict.md |
 | 2 | 2026-09-09 | baseline_v3（阶段0.5，A5协议） | ✅ 完成 | 外部调研+Codex 定位根因后重做：深度 L1 **135→34-49cm（3.1-3.8×改善）**、LPIPS 改善、G0.3 三序列凹陷全过（4.54/2.63/2.54dB）。PSNR 仅 +0.4~+1.3dB；曝光对齐只 +0.5dB（排除曝光主因）。图像证据确认：动态物体近距视角对静态地图是**原理上不可重建像素**。G0.2 改判（A6）：深度线✅、静区 12.2dB 未达 18dB。60k 长跑验证访问次数杠杆中（baseline_v3_long）。verdict: results/baseline_v3/evidence/verdict.md |
+| 4 | 2026-09-09 | lifecycle_gate（阶段1 第一轮配对） | ✅ 完成（阴性） | C0/P1/Ma/Mb ×3 序列（12 run 全 rc=0）。**退场/转正门控被证伪**：Ma/Mb 静区 -0.98/-1.00dB、depth +6%、kidnapping 保护读数 -2.6dB 违反；安慰剂 P1 与 C0 差 0.02dB（门禁干净，阴性为真）。归因：A5 软先验已是初始化时刻的生命周期门控，显式账本门控=双重惩罚。**止损**。剩余路径：E0 单遍递增协议（最强检验）、事件后回填入场、接受软先验转攻锐度。verdict: results/lifecycle_gate/evidence/verdict.md |
 | 3 | 2026-09-09 | baseline_v3_long（60k 步 static） | ✅ 完成 | **访问次数杠杆证伪**：4× 训练（15k→60k，每视图 120 次访问）PSNR 仅 11.64→11.69（+0.05dB），深度 42.9→42.7cm。12dB 平台=动态近距视角原理性误差地板，非优化不足。阶段0.5 判据闭环：A6 深度线过、静区锐度缺口即地板本身。**阶段0.5 收口，管线就绪，可开阶段1**（机制臂 vs baseline_v3） |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
