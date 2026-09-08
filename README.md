@@ -47,20 +47,23 @@ python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstr
 正式实验 3090 每卡≤2 并发、固定 worker 池、与 monogs 会话错峰并先查占用；
 本地 push → 远程 pull → HEAD 一致才跑。
 
-## 阶段0基线（2026-09-08，seed 0，姜伟恒 3090）
+## 阶段0 / 0.5 基线（seed 0，姜伟恒 3090）
 
-vanilla 融合初始化 + 纯精调（真值位姿+深度，held-out 帧，判据与判决见
-`results/baseline_vanilla/`）：
+v1 = vanilla 融合初始化+纯精调（2026-09-08）；v3 = 阶段0.5 A5 协议
+（软静态一致性先验+曝光补偿+足迹尺度+残差致密化，2026-09-09）：
 
-| 序列 | PSNR | SSIM | LPIPS | depth L1 (cm) | coverage |
-|---|---|---|---|---|---|
-| static | 10.96 | 0.617 | 0.795 | 135.1 | 0.861 |
-| removing_nobox | 12.07 | 0.657 | 0.792 | 136.4 | 0.864 |
-| placing_nobox | 11.25 | 0.616 | 0.882 | 143.4 | 0.861 |
-| kidnapping_box | 12.31 | 0.636 | 0.813 | 142.4 | 0.861 |
+| 序列 | v1 PSNR | v3 PSNR | v1 dL1(cm) | v3 dL1(cm) | v3 cov | v3 静区PSNR |
+|---|---|---|---|---|---|---|
+| static | 10.96 | 11.64 | 135.1 | **42.9** | 0.84 | 12.23 |
+| removing_nobox | 12.07 | **13.34** | 136.4 | **34.0** | 0.86 | 14.86 |
+| placing_nobox | 11.25 | **11.80** | 143.4 | **37.7** | 0.86 | 13.39 |
+| kidnapping_box | 12.31 | **12.43** | 142.4 | **49.0** | 0.86 | 13.29 |
 
-**阶段0判决：G0.2 未达标（<20dB）→ 不进阶段1，先做阶段0.5 管线质量修复**
-（细节致密化阈值修复，见 NOTES 踩坑与 results/baseline_vanilla/README.md）。
+**判决链**：v1 G0.2 未达标（11-12dB）→ 阶段0.5（A5）→ v3 深度 3-4× 改善、
+G0.3 三序列凹陷全过、曝光排除主因（+0.5dB）；渲染证据证实**动态物体近距视角
+对静态融合地图是原理性误差地板** → G0.2 改判为 depth≤50cm + 静区 PSNR≥18dB
+（A6）。深度线已过；静区锐度缺口验证中（60k 长跑 baseline_v3_long）。
+详见 results/baseline_v3/（verdict + 渲染证据）与 ROADMAP §7 A1-A6。
 
 ## 目录结构
 
