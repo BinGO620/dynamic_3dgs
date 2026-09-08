@@ -5,6 +5,7 @@
 | # | 日期 | 实验 | 状态 | 一句话结论 |
 |---|---|---|---|---|
 | 1 | 2026-09-08 | baseline_vanilla（阶段0基线） | ✅ 完成 | 四序列 rc=0（姜伟恒3090）。**G0.2 未达标**：held-out PSNR 11-12dB（目标≥20），depth L1 135-143cm。G0.1/G0.4 ✅（L2 diff=0.000，跨机逐值一致）；G0.3 ⚠️ 2/3（placing 2.37✓ kidnapping 3.10✓ removing 1.96✗）。**判决：不进阶段1，先做阶段0.5管线质量修复**（细节致密化阈值修复）。verdict: results/baseline_vanilla/evidence/verdict.md |
+| 2 | 2026-09-09 | baseline_v3（阶段0.5，A5协议） | ✅ 完成 | 外部调研+Codex 定位根因后重做：深度 L1 **135→34-49cm（3.1-3.8×改善）**、LPIPS 改善、G0.3 三序列凹陷全过（4.54/2.63/2.54dB）。PSNR 仅 +0.4~+1.3dB；曝光对齐只 +0.5dB（排除曝光主因）。图像证据确认：动态物体近距视角对静态地图是**原理上不可重建像素**。G0.2 改判（A6）：深度线✅、静区 12.2dB 未达 18dB。60k 长跑验证访问次数杠杆中（baseline_v3_long）。verdict: results/baseline_v3/evidence/verdict.md |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
 
@@ -22,8 +23,16 @@
   残影拖累是真实构成部分；②无细节致密化（ADC 阈值语义失效，见踩坑）是主因。
   G0.3 凹陷信号存在（placing 2.37dB、kidnapping 3.10dB）但噪声地板高。
   **已验证：同 seed 同 config 跨机（3090/V100）训练轨迹逐值一致**——管线确定性
-  成立，配对机制实验的内部效度有保障。修复路径见
-  results/baseline_vanilla/README.md 下一步。
+  成立，配对机制实验的内部效度有保障。
+- **阶段0.5 判决（2026-09-09，baseline_v3）**：A5 协议把深度质量做对了
+  （ghost 壳被软一致率先验压制，静态共识面保留），**"静态融合地图在动态近距
+  视角有原理性误差地板"已用渲染图像证实**——全帧 PSNR 门槛（≥20dB）对该
+  任务本身不可达，改用 depth L1 + 静区 PSNR（A6）。剩余光度缺口在细节锐度
+  （60k 长跑验证中）。
+- **阶段0.5 文献落地**（tavily 调研 + Codex 审阅）：像素足迹尺度初始化与
+  空洞/残差致密化=SplaTAM 与 Geometry-Aware Online Mapping (2608.14902) 的
+  在线映射规则；training-free 稠密种子=CoGS-SLAM；首帧致密化后固定数量=
+  Dynamic3DGS；曝光对齐评测采纳其"报告 raw+aligned"建议。
 
 （项目新建于 2026-09-08，其余继承自 monogs-ours 的机制设计约束
 已固化在 ROADMAP.md §2，不在此重复。）
