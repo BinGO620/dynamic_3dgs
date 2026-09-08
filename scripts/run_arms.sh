@@ -4,8 +4,8 @@ set -u
 PY=${PY:-/data/conda_envs/dynamic_3dgs/bin/python}
 ENV_BIN=$(dirname "$PY"); export PATH="$ENV_BIN:$PATH"
 EXP=lifecycle_gate
-ARMS=("P1" "Ma" "Mb")
-LCS=("placebo" "retire" "full")
+ARMS=(${@:-"P1 Ma Mb"})   # queue split across GPUs by arm name
+declare -A LCS=( [P1]=placebo [Ma]=retire [Mb]=full )
 SEQS=(rgbd_bonn_removing_nonobstructing_box rgbd_bonn_placing_nonobstructing_box rgbd_bonn_kidnapping_box)
 mkdir -p "results/${EXP}/logs"
 run_one() {
@@ -21,9 +21,9 @@ run_one() {
     return 0
 }
 i=0
-for ai in 0 1 2; do
+for arm in ${ARMS[@]}; do
     for seq in "${SEQS[@]}"; do
-        run_one "${ARMS[$ai]}" "${LCS[$ai]}" "$seq" &
+        run_one "$arm" "${LCS[$arm]}" "$seq" &
         i=$((i+1))
         if [ "$i" -ge 2 ]; then wait -n || true; i=$((i-1)); fi
     done
