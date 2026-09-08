@@ -35,6 +35,18 @@ python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstr
 python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstructing_box.yaml
 ```
 
+## 机器与环境矩阵（2026-09-08 定稿）
+
+| 机器 | 地址 | GPU | 仓库路径 | conda env | 数据 | 备注 |
+|---|---|---|---|---|---|---|
+| 本机（cb） | — | RTX 2060 6GB | /data/dynamic_3dgs | /data/conda_envs/dynamic_3dgs（硬链接克隆自 wildgs-slam：torch 2.1.0+cu118 + gsplat 1.5.3） | datasets→/data/monogs-ours/datasets | 孵化/冒烟；与 monogs-ours 会话共用，上卡前查占用 |
+| jiangwenheng | `ssh jiangwenheng`（172.16.227.24） | 3090×2（卡0=ComfyUI 少量占用可用；卡1=正式实验） | ~/cron/dynamic_3dgs | ~/anaconda3/envs/dynamic_3dgs（cp -al 克隆自 monogs-ours-3090 + gsplat；**只用 `python -m pip`**） | datasets/{bonn,replica,tum}→/mnt/app/datasets | JIT 编译：`CUDA_HOME=$HOME/anaconda3/envs/nvcc118` |
+| chenfan | `ssh remote`（100.72.201.57） | 3090（卡0）+ V100S（卡1） | ~/dynamic_3dgs | ~/miniconda3/envs/dynamic_3dgs（torch 2.1.0+cu118 + gsplat 1.5.3） | ~/dynamic_3dgs_data（仅 3 个 transition 序列；setuptools<81，**JIT 需 `export CC=gcc-11 CXX=g++-11`**） | 网络不稳，能用则用 |
+
+铁律（DISCIPLINE.md）：不触碰 /data/monogs-ours 仓库与 /data/conda_envs/monogs-ours；
+正式实验 3090 每卡≤2 并发、固定 worker 池、与 monogs 会话错峰并先查占用；
+本地 push → 远程 pull → HEAD 一致才跑。
+
 ## 阶段0基线（2026-09-08，seed 0，姜伟恒 3090）
 
 vanilla 融合初始化 + 纯精调（真值位姿+深度，held-out 帧，判据与判决见
