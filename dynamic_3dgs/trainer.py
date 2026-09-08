@@ -56,9 +56,13 @@ class Trainer:
         self.width, self.height = dataset.width, dataset.height
 
         t_indices = dataset.train_indices
-        n_init = int(cfg.get("init_frames", 10))
-        sel = np.linspace(0, len(t_indices) - 1, min(n_init, len(t_indices))).astype(int)
+        # init cloud from the training views themselves (depth-fused dense init):
+        # every gaussian's birth frame is known, and coverage matches what the
+        # baseline trains on. Without ADC there is no hole-filling, so training
+        # and eval rely on this union of frustums.
         pts_all, cols_all = [], []
+        cap = int(cfg.get("init_max_views", len(t_indices)))
+        sel = np.linspace(0, len(t_indices) - 1, min(cap, len(t_indices))).astype(int)
         for si in sel:
             frame = dataset.get_frame(int(t_indices[si]))
             p, c = unproject_frame(frame, dataset.K, int(cfg.get("init_stride", 4)))
@@ -66,9 +70,9 @@ class Trainer:
             cols_all.append(c)
         pts = np.concatenate(pts_all)
         cols = np.concatenate(cols_all)
-        pts, cols = voxel_downsample(pts, cols, float(cfg.get("init_voxel", 0.04)))
+        pts, cols = voxel_downsample(pts, cols, float(cfg.get("init_voxel", 0.02)))
         print(f"[trainer] init cloud: {pts.shape[0]} points "
-              f"from {len(sel)} frames (voxel {cfg.get('init_voxel', 0.04)}m)", flush=True)
+              f"from {len(sel)} train views (voxel {cfg.get('init_voxel', 0.02)}m)", flush=True)
         self.model = GaussianModel(
             pts, cols,
             sh_degree=int(cfg.get("sh_degree", 3)),
@@ -85,31 +89,36 @@ class Trainer:
         self.opts = self.model.optimizers(lrs)
         self.scheds = self.model.schedulers(self.opts, int(cfg.get("steps", 15000)))
         self.depth_weight = float(cfg.get("depth_weight", 0.15))
+        self.depth_alpha_min = float(cfg.get("depth_alpha_min", 0.5))
         self.dssim_weight = float(cfg.get("dssim_weight", 0.2))
         self.steps = int(cfg.get("steps", 15000))
         self.n_train = len(dataset.train_indices)
         self._rng = np.random.default_rng(int(cfg.get("seed", 0)))
 
-        self.strategy = DefaultStrategy(
-            prune_opa=cfg.get("prune_opa", 0.005),
-            grow_grad2d=cfg.get("grow_grad2d", 0.0002),
-            grow_scale3d=cfg.get("grow_scale3d", 0.01),
-            grow_scale2d=cfg.get("grow_scale2d", 0.05),
-            refine_start_iter=cfg.get("refine_start_iter", 500),
-            refine_stop_iter=self.steps,
-            reset_every=cfg.get("reset_every", 3000),
-            refine_every=cfg.get("refine_every", 100),
-            revised_opacity=True,
-            verbose=False,
-        )
-        # scene_scale in METRES (gsplat default 1.0 assumes normalized scenes;
-        # a metre-scale indoor scene would be mass-pruned by prune_scale3d)
-        with torch.no_grad():
-            means0 = self.model.params["means"].detach()
-            scene_scale = float((means0.max(0).values - means0.min(0).values).norm())
-        self.strategy_state = self.strategy.initialize_state(
-            scene_scale=max(scene_scale, 1.0)
-        )
+        self.use_adc = bool(cfg.get("use_adc", False))
+        if self.use_adc:
+            self.strategy = DefaultStrategy(
+                prune_opa=cfg.get("prune_opa", 0.005),
+                grow_grad2d=cfg.get("grow_grad2d", 0.0002),
+                grow_scale3d=cfg.get("grow_scale3d", 0.01),
+                grow_scale2d=cfg.get("grow_scale2d", 0.05),
+                refine_start_iter=cfg.get("refine_start_iter", 500),
+                refine_stop_iter=self.steps,
+                reset_every=cfg.get("reset_every", 3000),
+                refine_every=cfg.get("refine_every", 100),
+                revised_opacity=True,
+                verbose=False,
+            )
+            # gsplat's DefaultStrategy defaults assume a UNIT-normalized scene.
+            # Our scales are in metres; keep scene_scale=1.0 so grow boundary
+            # = 1cm and prune ceiling = 10cm.
+            scene_scale = float(cfg.get("scene_scale", 1.0))
+            self.strategy_state = self.strategy.initialize_state(
+                scene_scale=scene_scale
+            )
+        else:
+            self.strategy = None
+            self.strategy_state = None
 
     def render(self, frame: dict):
         T = frame["T_cw"].to(self.device)
@@ -129,13 +138,18 @@ class Trainer:
             self.width,
             self.height,
             sh_degree=max_sh,
-            render_mode="RGB+D",
+            render_mode="RGB+ED",  # ED = expected depth (alpha-normalized); raw
+            # accumulated "D" is biased toward the camera wherever alpha < 1
             near_plane=0.01,
             far_plane=1e10,
             backgrounds=None,
             packed=False,  # must match DefaultStrategy.step_post_backward(packed=False)
             absgrad=False,
         )
+        # gsplat returns alphas as (C, H, W, 1); drop the trailing dim
+        if alphas.dim() == 4:
+            alphas = alphas[..., 0]
+        return renders, alphas, info
         return renders, alphas, info
 
     def train_step(self, step: int) -> dict:
@@ -148,20 +162,27 @@ class Trainer:
         rgb = renders[0, :, :, :3].permute(2, 0, 1)[None]  # (1,3,H,W)
         depth = renders[0, :, :, 3][None, None]
 
-        self.strategy.step_pre_backward(
-            self.model.params, self.opts, self.strategy_state, step, info
-        )
+        if self.use_adc:
+            self.strategy.step_pre_backward(
+                self.model.params, self.opts, self.strategy_state, step, info
+            )
 
         l1_rgb = torch.abs(rgb - rgb_gt).mean()
         loss = (1 - self.dssim_weight) * l1_rgb + self.dssim_weight * ssim_loss(rgb, rgb_gt)
-        dmask = (depth_gt > 0).float()
-        l1_depth = (torch.abs(depth - depth_gt) * dmask).sum() / dmask.sum().clamp_min(1)
+        # depth loss on pixels the render actually covers (alpha >= a_min):
+        # counting holes as |0 - gt| would dominate the loss with metres-scale
+        # gradients and prevent RGB optimization entirely
+        a_min = self.depth_alpha_min
+        cov = (alphas[0] >= a_min) & (depth_gt[0, 0] > 0)
+        l1_depth = (torch.abs(depth - depth_gt)[0, 0][cov]).mean() if bool(cov.any()) \
+            else torch.zeros((), device=self.device)
         loss = loss + self.depth_weight * l1_depth
 
         loss.backward()
-        self.strategy.step_post_backward(
-            self.model.params, self.opts, self.strategy_state, step, info
-        )
+        if self.use_adc:
+            self.strategy.step_post_backward(
+                self.model.params, self.opts, self.strategy_state, step, info
+            )
 
         for o in self.opts.values():
             o.step()

@@ -3,8 +3,7 @@ abstract: true  # template only, skipped by L1 gate
 seed: 0
 steps: 15000
 init_stride: 4
-init_frames: 10   # init cloud from N frames spread over the sequence
-init_voxel: 0.04  # voxel downsample (m)
+init_voxel: 0.02  # voxel downsample (m); init cloud fuses ALL train views
 sh_degree: 3
 lr_means: 1.6e-4
 lr_quats: 1.0e-3
@@ -26,6 +25,7 @@ dataset:
   path: datasets/bonn/PLACEHOLDER
   max_frames: -1
   eval_stride: 5
+  train_views: 500   # fixed-count training views (each seen ~30x at 15k steps)
   max_dt: 0.02
   calibration:
     fx: 542.822841

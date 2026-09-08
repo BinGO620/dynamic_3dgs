@@ -85,9 +85,15 @@ class TumFormatDataset(torch.utils.data.Dataset):
         calibration: dict,
         max_frames: int = -1,
         eval_stride: int = 5,
+        train_views: int = 500,
         max_dt: float = 0.02,
         device: str = "cpu",
     ):
+        """``train_views`` caps the number of training views: offline 3DGS needs
+        each view visited ~dozens of times; training on all frames (30Hz video)
+        gives ~2 visits per view at 15k steps and the model never converges.
+        Eval frames (i % eval_stride == 0) are always excluded from training.
+        """
         self.path = path
         self.width = int(calibration["width"])
         self.height = int(calibration["height"])
@@ -148,14 +154,20 @@ class TumFormatDataset(torch.utils.data.Dataset):
         self.samples = samples
 
         self.eval_stride = eval_stride
-        self.is_eval = np.array(
-            [i % eval_stride == 0 for i in range(len(self.samples))]
-        )
+        self.is_eval = np.array([i % eval_stride == 0 for i in range(len(self.samples))])
+        # fixed-count training views spread uniformly over non-eval frames
+        n_train = int(train_views)
+        candidates = np.where(~self.is_eval)[0]
+        if len(candidates) > n_train:
+            sel = np.linspace(0, len(candidates) - 1, n_train).astype(int)
+            candidates = candidates[sel]
+        self.is_train = np.zeros(len(self.samples), dtype=bool)
+        self.is_train[candidates] = True
 
     # --- convenience API -------------------------------------------------
     @property
     def train_indices(self) -> np.ndarray:
-        return np.where(~self.is_eval)[0]
+        return np.where(self.is_train)[0]
 
     @property
     def eval_indices(self) -> np.ndarray:
@@ -205,6 +217,7 @@ def make_dataset(cfg: dict, device: str = "cpu") -> TumFormatDataset:
         calibration=ds_cfg["calibration"],
         max_frames=int(ds_cfg.get("max_frames", -1)),
         eval_stride=int(ds_cfg.get("eval_stride", 5)),
+        train_views=int(ds_cfg.get("train_views", 500)),
         max_dt=float(ds_cfg.get("max_dt", 0.02)),
         device=device,
     )

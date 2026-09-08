@@ -38,6 +38,7 @@ def main():
     ap.add_argument("--max-frames", type=int, default=None)
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--eval-stride", type=int, default=None)
+    ap.add_argument("--train-frame-stride", type=int, default=None)
     ap.add_argument("--tag", default="eval")
     args = ap.parse_args()
 
@@ -50,6 +51,8 @@ def main():
         cfg["dataset"]["max_frames"] = args.max_frames
     if args.eval_stride is not None:
         cfg["dataset"]["eval_stride"] = args.eval_stride
+    if args.train_frame_stride is not None:
+        cfg["dataset"]["train_frame_stride"] = args.train_frame_stride
 
     seed = int(cfg.get("seed", 0))
     torch.manual_seed(seed)
@@ -81,7 +84,7 @@ def main():
         renders, alphas, _ = trainer.render(frame)
         rgb = renders[0, :, :, :3].permute(2, 0, 1).clamp(0.0, 1.0)
         depth = renders[0, :, :, 3]
-        return rgb, depth
+        return rgb, depth, alphas[0]
 
     evaluator = PhotometricEvaluator(ds, device=device)
     summary_eval = evaluator.evaluate(render_fn, ds.eval_indices, out_dir, tag="eval")

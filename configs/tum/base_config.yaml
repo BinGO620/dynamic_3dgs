@@ -1,0 +1,31 @@
+abstract: true  # template only, skipped by L1 gate
+seed: 0
+steps: 15000
+init_stride: 4
+init_voxel: 0.02
+final_lr_frac: 0.1
+use_adc: false
+dssim_weight: 0.2
+depth_weight: 0.15
+
+dataset:
+  type: tum
+  path: datasets/tum/PLACEHOLDER
+  max_frames: -1
+  eval_stride: 5
+  train_views: 500
+  max_dt: 0.02
+  calibration:
+    fx: 535.4
+    fy: 539.2
+    cx: 320.1
+    cy: 247.6
+    k1: 0.0
+    k2: 0.0
+    p1: 0.0
+    p2: 0.0
+    k3: 0.0
+    distorted: False
+    width: 640
+    height: 480
+    depth_scale: 5000.0

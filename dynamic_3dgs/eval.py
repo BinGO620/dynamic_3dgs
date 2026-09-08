@@ -46,14 +46,19 @@ class PhotometricEvaluator:
 
     @torch.no_grad()
     def evaluate(self, render_fn, indices, save_dir: str | None = None,
-                 tag: str = "eval") -> dict:
-        """``render_fn(frame) -> (rgb (3,H,W) [0,1], depth (H,W) metres)``."""
+                 tag: str = "eval", alpha_min: float = 0.5) -> dict:
+        """``render_fn(frame) -> (rgb (3,H,W) [0,1], depth (H,W) metres,
+        alpha (H,W) [0,1])``. Depth L1 is computed on covered pixels
+        (alpha >= alpha_min); coverage over valid-GT pixels is reported
+        separately so holes cannot hide."""
         rows = []
         for idx in indices:
             frame = self.ds.get_frame(int(idx))
-            rgb_pred, depth_pred = render_fn(frame)
+            rgb_pred, depth_pred, alpha = render_fn(frame)
             rgb_gt = frame["rgb"].to(self.device)
             depth_gt = frame["depth"].to(self.device)
+            gt_valid = (depth_gt > 0) & torch.isfinite(depth_gt)
+            covered = gt_valid & (alpha >= alpha_min)
             row = {
                 "frame_idx": int(idx),
                 "t": frame["t"],
@@ -61,7 +66,10 @@ class PhotometricEvaluator:
                 "ssim": _ssim(rgb_pred, rgb_gt),
                 "lpips": float(self.lpips_fn(
                     rgb_pred[None], rgb_gt[None], normalize=True).item()),
-                "depth_l1_cm": compute_depth_l1_cm(depth_pred, depth_gt),
+                "depth_l1_cm": compute_depth_l1_cm(depth_pred[covered],
+                                                   depth_gt[covered])
+                if bool(covered.any()) else None,
+                "coverage": float(covered.float().mean()),
             }
             rows.append(row)
 
@@ -77,6 +85,7 @@ class PhotometricEvaluator:
             "mean_ssim": _mean("ssim"),
             "mean_lpips": _mean("lpips"),
             "mean_depth_l1_cm": _mean("depth_l1_cm"),
+            "mean_coverage": _mean("coverage"),
         }
 
         if save_dir:
