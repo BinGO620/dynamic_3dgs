@@ -76,6 +76,12 @@ class PhotometricEvaluator:
             stat = covered & (torch.abs(depth_pred - depth_gt) < 0.2)
             row["psnr_static_cons"] = _psnr(rgb_pred[:, stat], rgb_gt[:, stat]) \
                 if bool(stat.any()) else None
+            # exposure-aligned PSNR: per-frame per-channel gain fit (closed form),
+            # quantifies how much of the residual is auto-exposure drift
+            g = (rgb_pred * rgb_gt).sum(dim=(1, 2)) / \
+                (rgb_pred * rgb_pred).sum(dim=(1, 2)).clamp_min(1e-8)
+            aligned = (rgb_pred * g[:, None, None]).clamp(0, 1)
+            row["psnr_exp_aligned"] = _psnr(aligned, rgb_gt)
             rows.append(row)
 
         def _mean(key: str) -> float:
@@ -92,6 +98,7 @@ class PhotometricEvaluator:
             "mean_depth_l1_cm": _mean("depth_l1_cm"),
             "mean_coverage": _mean("coverage"),
             "mean_psnr_static_cons": _mean("psnr_static_cons"),
+            "mean_psnr_exp_aligned": _mean("psnr_exp_aligned"),
         }
 
         if save_dir:
