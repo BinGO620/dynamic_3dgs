@@ -33,6 +33,14 @@ densify_depth_thr: 0.2
 densify_alpha_thr: 0.4
 prune_every: 2000
 prune_opa: 0.01
+# stage-1 lifecycle gate (per-arm override: off | retire | full)
+lifecycle: off
+ev_tau: 0.15
+retire_every: 1000
+retire_ev: 0.2
+retire_min_age: 2000
+confirm_every: 1000
+confirm_ev: 0.6
 
 dataset:
   type: bonn

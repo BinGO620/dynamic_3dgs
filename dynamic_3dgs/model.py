@@ -72,8 +72,49 @@ class GaussianModel:
     def n_gaussians(self) -> int:
         return self.params["means"].shape[0]
 
+    # ------------------------------------------------ lifecycle ledger
+    def init_ledger(self, device: str = "cuda", birth_step: int = 0):
+        """Per-gaussian lifecycle ledger (stage-1 M-a/M-b):
+        - ``birth``: optimization step when the gaussian entered the map;
+        - ``evidence``: EMA of per-observation static consistency in [0,1]
+          (updated by the trainer from reprojection agreement of the rendered
+          gaussian with other frames' GT depth);
+        - ``confirmed``: probation flag for insertion-gated points (M-b).
+        """
+        n = self.n_gaussians
+        self.ledger = {
+            "birth": torch.full((n,), float(birth_step), device=device),
+            "evidence": torch.full((n,), 0.5, device=device),
+            "confirmed": torch.ones(n, dtype=torch.bool, device=device),
+        }
+
+    def ledger_append(self, birth_step: float, evidence: float = 0.5,
+                      confirmed: bool = False, device: str = "cuda"):
+        n_new = 0
+        for k in ("birth", "evidence"):
+            assert k in self.ledger, "init_ledger() first"
+        n_new = self.params["means"].shape[0] - self.ledger["birth"].shape[0]
+        if n_new <= 0:
+            return
+        self.ledger["birth"] = torch.cat([
+            self.ledger["birth"], torch.full((n_new,), float(birth_step), device=device)])
+        self.ledger["evidence"] = torch.cat([
+            self.ledger["evidence"], torch.full((n_new,), float(evidence), device=device)])
+        self.ledger["confirmed"] = torch.cat([
+            self.ledger["confirmed"],
+            torch.full((n_new,), bool(confirmed), dtype=torch.bool, device=device)])
+
+    def ledger_prune_keep(self, keep: torch.Tensor):
+        for k in self.ledger:
+            self.ledger[k] = self.ledger[k][keep]
+
     def state_dict(self) -> dict:
-        return {k: p.detach().cpu().numpy() for k, p in self.params.items()}
+        d = {k: p.detach().cpu().numpy() for k, p in self.params.items()}
+        if hasattr(self, "ledger"):
+            d["ledger_birth"] = self.ledger["birth"].detach().cpu().numpy()
+            d["ledger_evidence"] = self.ledger["evidence"].detach().cpu().numpy()
+            d["ledger_confirmed"] = self.ledger["confirmed"].detach().cpu().numpy()
+        return d
 
 
 def unproject_frame(frame: dict, K: np.ndarray, stride: int = 4):

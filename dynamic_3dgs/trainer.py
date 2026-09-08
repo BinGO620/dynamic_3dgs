@@ -71,6 +71,15 @@ class Trainer:
         self.densify_alpha_thr = float(cfg.get("densify_alpha_thr", 0.4))
         self.prune_every = int(cfg.get("prune_every", 2000))
         self.prune_opa = float(cfg.get("prune_opa", 0.01))
+        # stage-1 lifecycle gate (M-a retire / M-b confirm)
+        self.lifecycle = str(cfg.get("lifecycle", "off"))  # off | retire | full
+        self.ev_tau = float(cfg.get("ev_tau", 0.15))       # EMA rate per update
+        self.retire_every = int(cfg.get("retire_every", 1000))
+        self.retire_ev = float(cfg.get("retire_ev", 0.2))  # evidence below -> retire
+        self.retire_min_age = int(cfg.get("retire_min_age", 2000))
+        self.confirm_every = int(cfg.get("confirm_every", 1000))
+        self.confirm_ev = float(cfg.get("confirm_ev", 0.6))
+        self.confirm_min_vis = int(cfg.get("confirm_min_vis", 3))
         self.n_train = len(dataset.train_indices)
         self._rng = np.random.default_rng(int(cfg.get("seed", 0)))
 
@@ -99,6 +108,8 @@ class Trainer:
             self.exp_gain = self.exp_bias = self.opt_exp = None
         self._train_row = {int(v): k for k, v in enumerate(dataset.train_indices)}
         self.max_sh = self.model.sh_degree
+        if self.lifecycle != "off":
+            self.model.init_ledger(device=device, birth_step=0)
 
     # ------------------------------------------------------------------ init
     def _soft_opacity(self, ratio: np.ndarray) -> np.ndarray:
@@ -265,14 +276,72 @@ class Trainer:
         densified = 0
         if self.densify_every and step >= self.densify_start and step % self.densify_every == 0:
             densified = self._densify_residual(step)
+            if self.lifecycle != "off" and densified:
+                self.model.ledger_append(birth_step=step, confirmed=(self.lifecycle != "full"))
         pruned = 0
         if self.prune_every and step % self.prune_every == 0:
             pruned = self._prune_low_opacity()
 
+        retired = confirmed_n = 0
+        if self.lifecycle != "off":
+            self._update_evidence(step)
+            if step % self.retire_every == 0:
+                retired = self._retire(step)
+            if self.lifecycle == "full" and step % self.confirm_every == 0:
+                confirmed_n = self._confirm()
+
         return {"loss": float(loss.item()), "l1_rgb": float(l1_rgb.item()),
                 "l1_depth": float(l1_depth.item()) if cov.any() else float("nan"),
                 "n_gauss": self.model.n_gaussians,
-                "inserted": densified, "pruned": pruned}
+                "inserted": densified, "pruned": pruned,
+                "retired": retired, "confirmed": confirmed_n}
+
+    # ------------------------------------------------- lifecycle ledger ops
+    def _update_evidence(self, step: int):
+        """Batched per-gaussian static-consistency evidence update (EMA).
+
+        Reuses the init-time agreement machinery on the CURRENT parameter
+        positions; runs every retire_every steps (O(N x n_ref) numpy)."""
+        from .model import static_agreement_ratio
+        pts = self.model.params["means"].detach().cpu().numpy()
+        n_ref = int(self.cfg.get("sc_refs", 4))
+        ratio = static_agreement_ratio(
+            self.ds, int(step) % max(len(self.ds), 1), pts,
+            n_ref=n_ref,
+            tol_base=float(self.cfg.get("sc_tol_base", 0.08)),
+            tol_rel=float(self.cfg.get("sc_tol_rel", 0.03)),
+        )
+        ev = torch.from_numpy(ratio).float().to(self.model.ledger["evidence"].device)
+        with torch.no_grad():
+            self.model.ledger["evidence"].mul_(1 - self.ev_tau).add_(ev, alpha=self.ev_tau)
+
+    def _retire(self, step: int) -> int:
+        """Remove gaussians with age >= retire_min_age and evidence < retire_ev."""
+        with torch.no_grad():
+            age = step - self.model.ledger["birth"]
+            bad = (age >= self.retire_min_age) &                   (self.model.ledger["evidence"] < self.retire_ev)
+        n = int(bad.sum())
+        if n == 0:
+            return 0
+        keep = ~bad
+        for k, p in self.model.params.items():
+            self.model.params[k] = torch.nn.Parameter(
+                p.data[keep], requires_grad=p.requires_grad)
+        self.model.ledger_prune_keep(keep)
+        self._rebuild_opts()
+        return n
+
+    def _confirm(self) -> int:
+        """M-b: probation points (low-opacity inserts) become full members when
+        evidence is high and they are old enough to have been observed."""
+        with torch.no_grad():
+            elig = (~self.model.ledger["confirmed"]) &                    (self.model.ledger["evidence"] >= self.confirm_ev)
+        n = int(elig.sum())
+        if n == 0:
+            return 0
+        with torch.no_grad():
+            self.model.ledger["confirmed"][elig] = True
+        return n
 
     def _densify_residual(self, step: int) -> int:
         """Insert static-consistent points where the render has holes or large
@@ -316,6 +385,9 @@ class Trainer:
         vi = v.astype(int)[m]; ui = u.astype(int)[m]
         cols = rgb_c[:, vi, ui].cpu().numpy().T  # (K,3)
         s = z / float(K[0, 0]) * 2.0  # ~2-pixel footprint
+        if self.lifecycle == "full":
+            # probation: entry gate halves the soft prior until confirmed
+            o = np.clip(o * 0.5, 0.02, 0.9)
         self._insert(pts_w.astype(np.float32), cols.astype(np.float32),
                      s.astype(np.float32), opacities=o.astype(np.float32))
         return int(pts_w.shape[0])
