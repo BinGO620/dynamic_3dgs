@@ -233,9 +233,13 @@ class Trainer:
         return int((~keep).sum())
 
     # ----------------------------------------------------------- train step
-    def train_step(self, step: int) -> dict:
-        row = int(self._rng.integers(self.n_train))
-        idx = int(self.ds.train_indices[row])
+    def train_step(self, step: int, force_idx: int | None = None) -> dict:
+        if force_idx is not None:
+            idx = int(force_idx)
+            row = int(self._train_row[idx])
+        else:
+            row = int(self._rng.integers(self.n_train))
+            idx = int(self.ds.train_indices[row])
         frame = self.ds.get_frame(idx)
         rgb_gt = frame["rgb"].to(self.device)[None]
         depth_gt = frame["depth"].to(self.device)[None, None]
@@ -401,6 +405,28 @@ class Trainer:
     def train(self, log_every: int = 500) -> list:
         log = []
         t_start = time.time()
+        stream = bool(self.cfg.get("stream_pass", False))
+        if stream:
+            # E0 protocol: strict temporal order, each training frame seen
+            # stream_k times (its own mapping window) — a SLAM-like schedule
+            # with no re-observation epochs. steps is overridden.
+            k = int(self.cfg.get("stream_k", 40))
+            order = list(map(int, self.ds.train_indices))
+            self.steps = len(order) * k
+            for si, idx in enumerate(order):
+                for j in range(k):
+                    step = si * k + j + 1
+                    stats = self.train_step(step, force_idx=idx)
+                    if step % log_every == 0 or step == self.steps:
+                        stats["step"] = step
+                        stats["elapsed_s"] = round(time.time() - t_start, 1)
+                        log.append(stats)
+                        print(f"[step {step:6d}] loss={stats['loss']:.4f} "
+                              f"l1_rgb={stats['l1_rgb']:.4f} "
+                              f"l1_depth={stats['l1_depth']:.4f} "
+                              f"n={stats['n_gauss']} ins={stats['inserted']} "
+                              f"pru={stats['pruned']} ret={stats['retired']}", flush=True)
+            return log
         for step in range(1, self.steps + 1):
             stats = self.train_step(step)
             if step % log_every == 0 or step == self.steps:
