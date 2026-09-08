@@ -23,8 +23,15 @@ SEQS = ["rgbd_bonn_removing_nonobstructing_box",
 ARMS = ["C0", "P1", "Ma", "Mb"]
 
 
+def _run_dir(root: str, arm: str, seq: str) -> str:
+    # C0 lives in lifecycle_gate/{seq}; arms in lifecycle_gate_{arm}/{seq}
+    if arm == "C0":
+        return f"{root}/lifecycle_gate/{seq}/seed_0"
+    return f"{root}/lifecycle_gate_{arm}/{seq}/seed_0"
+
+
 def load(root: str, arm: str, seq: str) -> dict | None:
-    p = f"{root}/{seq}_{arm}/seed_0/summary_eval.json"
+    p = f"{_run_dir(root, arm, seq)}/summary_eval.json"
     try:
         return json.load(open(p))
     except FileNotFoundError:
@@ -33,7 +40,7 @@ def load(root: str, arm: str, seq: str) -> dict | None:
 
 def dip_db(root: str, arm: str, seq: str) -> float | None:
     import csv, os
-    p = f"{root}/{seq}_{arm}/seed_0/per_frame_eval.csv"
+    p = f"{_run_dir(root, arm, seq)}/per_frame_eval.csv"
     if not os.path.exists(p):
         return None
     rows = list(csv.DictReader(open(p)))

@@ -1,0 +1,20 @@
+{
+  "P1": {
+    "static_cons_gain_db": 0.05,
+    "depth_ratio": 1.0,
+    "M1_pass": false,
+    "M2_pass": false
+  },
+  "Ma": {
+    "static_cons_gain_db": -0.98,
+    "depth_ratio": 1.062,
+    "M1_pass": false,
+    "M2_pass": false
+  },
+  "Mb": {
+    "static_cons_gain_db": -1.0,
+    "depth_ratio": 1.063,
+    "M1_pass": false,
+    "M2_pass": false
+  }
+}

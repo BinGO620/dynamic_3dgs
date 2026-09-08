@@ -1,0 +1,20 @@
+{
+  "P1": {
+    "static_cons_gain_db": NaN,
+    "depth_ratio": NaN,
+    "M1_pass": false,
+    "M2_pass": false
+  },
+  "Ma": {
+    "static_cons_gain_db": NaN,
+    "depth_ratio": NaN,
+    "M1_pass": false,
+    "M2_pass": false
+  },
+  "Mb": {
+    "static_cons_gain_db": NaN,
+    "depth_ratio": NaN,
+    "M1_pass": false,
+    "M2_pass": false
+  }
+}

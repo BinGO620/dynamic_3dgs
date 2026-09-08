@@ -1,0 +1,11 @@
+{
+  "tag": "eval",
+  "n_frames": 144,
+  "mean_psnr": 11.807822896991524,
+  "mean_ssim": 0.6044338395198187,
+  "mean_lpips": 0.7539819545216031,
+  "mean_depth_l1_cm": 37.73120309536656,
+  "mean_coverage": 0.8593272993134128,
+  "mean_psnr_static_cons": 13.342153258069946,
+  "mean_psnr_exp_aligned": 12.101808012492832
+}
