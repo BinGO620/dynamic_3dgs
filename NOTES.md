@@ -99,3 +99,11 @@
   （fr1=517.31/fr2=520.91/fr3=535.40/bonn=542.82，±1.0 容差），注入式负测试
   通过（commit 8ebb066）。克隆/继承配置时此事故类最易发生——merge 链越长越要
   审计"最终生效值"而非"写了什么"。
+
+- **移植 bug 教训（2026-09-10，用户发现"好多 bug"后全量审查）**：stock
+  MonoGS `map()` 的 `prune_mode='slam'` 剪枝有 `self.monocular` 守卫（仅
+  单目执行），移植时丢守卫 → RGB-D 每个 kf 的新点被 n_obs≤3 持续剪掉
+  （35k vs 修复后 96k 高斯）。**教训：移植语义敏感代码必须 diff 到 stock
+  原句级别的控制流（尤其 `and self.monocular` 这类静默守卫）**；同类修复：
+  init 二次 reset 条件、offline 循环含 frame0、confirm-config 继承、
+  config_used 落盘时序。修复后底座 16.77dB（+0.13），阶梯判决不变。
