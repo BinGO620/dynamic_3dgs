@@ -23,7 +23,7 @@ Training:
   alpha: 0.9
   kf_translation: 0.08
   kf_min_translation: 0.05
-  kf_overlap: 0.9
+  kf_overlap: 0.5
   kf_cutoff: 0.3
   prune_mode: 'slam'
   color_refine_iters: 26000

@@ -58,13 +58,14 @@ def eval_rendering(
     background,
     kf_indices,
     iteration="final",
+    eval_exposure_aligned=True,
 ):
     """Render every ``interval``-th non-keyframe frame with GT pose and
     report PSNR / SSIM / LPIPS / depth L1-cm."""
     interval = 5
     end_idx = len(frames) if iteration == "final" else int(iteration)
     psnr_array, ssim_array, lpips_array, depth_l1_array = [], [], [], []
-    depth_l1_cov_array, cov_ratio_array = [], []
+    depth_l1_cov_array, cov_ratio_array, psnr_aligned_array = [], [], []
     saved_frame_idx = []
     cal_lpips = LearnedPerceptualImagePatchSimilarity(
         net_type="alex", normalize=True
@@ -89,6 +90,17 @@ def eval_rendering(
         lpips_array.append(
             cal_lpips((image).unsqueeze(0), (gt_image).unsqueeze(0)).item()
         )
+        # exposure-aligned PSNR (v3 precedent: report raw + aligned): closed-form
+        # per-frame least-squares a,b  min ||a*img+b-gt||  over valid pixels
+        if eval_exposure_aligned:
+            img_v = image[mask].reshape(-1, 1)
+            gt_v = gt_image[mask].reshape(-1, 1)
+            A = torch.cat([img_v, torch.ones_like(img_v)], dim=1)
+            sol = torch.linalg.lstsq(A, gt_v).solution
+            img_a = torch.clamp((A @ sol).reshape_as(image[mask]), 0.0, 1.0)
+            psnr_aligned_array.append(
+                psnr(img_a.unsqueeze(0), (gt_image[mask]).unsqueeze(0)).item()
+            )
         depth_l1_cm = _compute_depth_l1_cm(render_pkg["depth"], gt_depth)
         depth_l1_cov, cov_ratio = _compute_depth_l1_cm_coverage(
             render_pkg["depth"], gt_depth
@@ -109,6 +121,7 @@ def eval_rendering(
         )
 
     output["mean_psnr"], n_drop = _finite_mean(psnr_array)
+    output["mean_psnr_aligned"], _ = _finite_mean(psnr_aligned_array)
     output["mean_ssim"], _ = _finite_mean(ssim_array)
     output["mean_lpips"], _ = _finite_mean(lpips_array)
     output["mean_depth_l1_cm"] = (
