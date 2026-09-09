@@ -1,0 +1,14 @@
+{
+  "frames": [],
+  "mean_psnr": NaN,
+  "mean_psnr_aligned": NaN,
+  "mean_ssim": NaN,
+  "mean_lpips": NaN,
+  "mean_depth_l1_cm": null,
+  "mean_depth_l1_cm_cov": null,
+  "mean_depth_coverage": null,
+  "n_eval_frames": 0,
+  "n_kf": 492,
+  "n_gauss": 24821,
+  "seed": 0
+}

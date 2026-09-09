@@ -50,31 +50,38 @@ def _compute_depth_l1_cm_coverage(render_depth, gt_depth):
 
 
 def eval_rendering(
-    frames,
-    gaussians,
     dataset,
+    gaussians,
     save_dir,
     pipe,
     background,
     kf_indices,
+    projection_matrix,
     iteration="final",
     eval_exposure_aligned=True,
 ):
-    """Render every ``interval``-th non-keyframe frame with GT pose and
-    report PSNR / SSIM / LPIPS / depth L1-cm."""
+    """Render every 5th frame with GT pose and report PSNR (raw +
+    exposure-aligned) / SSIM / LPIPS / depth L1-cm.
+
+    Cameras are built on the fly from the dataset: held-out frames are
+    never instantiated by the mapper. Keyframes (trained-on) are skipped,
+    so frame 0 — the exempt init keyframe — is also skipped.
+    """
     interval = 5
-    end_idx = len(frames) if iteration == "final" else int(iteration)
+    end_idx = len(dataset) if iteration == "final" else int(iteration)
     psnr_array, ssim_array, lpips_array, depth_l1_array = [], [], [], []
     depth_l1_cov_array, cov_ratio_array, psnr_aligned_array = [], [], []
     saved_frame_idx = []
     cal_lpips = LearnedPerceptualImagePatchSimilarity(
         net_type="alex", normalize=True
     ).to("cuda")
+    from dynamic_3dgs.legacy_core.camera import Camera
+
     for idx in range(0, end_idx, interval):
         if idx in kf_indices:
             continue
         saved_frame_idx.append(idx)
-        frame = frames[idx]
+        frame = Camera.init_from_dataset(dataset, idx, projection_matrix)
         gt_image, gt_depth, _ = dataset[idx]
         gt_image = gt_image.cuda()  # images are CPU-stored; metrics run on CUDA
 

@@ -407,9 +407,15 @@ class OfflineMapper:
     def run(self, log_every=200):
         projection_matrix = self.make_projection_matrix()
         n_frames = len(self.dataset)
+        eval_set = {int(i) for i in self.dataset.eval_indices}
         cur_frame_idx = 0
 
         while cur_frame_idx < n_frames:
+            if cur_frame_idx in eval_set and cur_frame_idx != 0:
+                # held-out frame: never trained on, never a keyframe.
+                # frame 0 is exempt: the map must initialize from it.
+                cur_frame_idx += 1
+                continue
             viewpoint = self.camera_from_idx(cur_frame_idx, projection_matrix)
             self.viewpoints[cur_frame_idx] = viewpoint
 
@@ -489,12 +495,12 @@ class OfflineMapper:
         from dynamic_3dgs.legacy_core.eval_utils import eval_rendering
 
         return eval_rendering(
-            frames=[self.viewpoints[i] for i in sorted(self.viewpoints.keys())],
-            gaussians=self.gaussians,
             dataset=self.dataset,
+            gaussians=self.gaussians,
             save_dir=self.save_dir,
             pipe=self.pipeline_params,
             background=self.background,
             kf_indices=set(self.kf_indices),
+            projection_matrix=self.make_projection_matrix(),
             iteration="final",
         )
