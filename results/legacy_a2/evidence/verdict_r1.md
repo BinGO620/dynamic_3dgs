@@ -51,3 +51,23 @@
 
 路线 X（只读移植 monogs-ours backend 建图期工程增量）成为唯一未证伪的
 强底座路径；或接受 16.65dB 底座 + 修正 Bonn 判据口径后进 Phase B。
+
+## 补充（2026-09-10 凌晨）：移植 bug 修复后的复测
+
+用户指出代码有 bug，审查发现 **map() prune 路径丢失 stock 的 monocular
+守卫**（n_obs≤3 剪枝 stock 只对单目执行，RGB-D 不剪；我们凭空多剪），
+另有 confirm-config 继承、config_used 先于 override 落盘等 6 处已修
+（commit 403bef5）。
+
+修复后复测（bonn_removing seed0）：
+
+| 配置 | 带 bug | 修复后 |
+|---|---|---|
+| base（stock 精修） | 16.646 / 34854 gauss | **16.771 / 95619 gauss（3×）** |
+| a5 | 14.145 / dL1 224.8 | 14.469 / dL1 224.2 |
+| a2 | 13.892 / dL1 38.5 | 14.076 / dL1 39.5 |
+
+**判决不变**：全臂仍低于修复后 base ≥2.3dB，路线 Y 证伪成立。修正两点
+记录：①champion 底座 = 16.77dB / 96k 高斯；②"prune 吃新点"的主因是本次
+修复的移植 bug（n_obs 剪枝），gaussian_th/size_threshold 是 stock 自有的
+次要条件。
