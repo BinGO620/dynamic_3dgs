@@ -91,6 +91,19 @@ class OfflineMapper:
         self.alpha = t.get("alpha", 0.95)
         self.lambda_dssim = config["opt_params"]["lambda_dssim"]
         self.color_refine_iters = t.get("color_refine_iters", 26000)
+        # offline sharpening levers (A7-rev4): densify during refinement,
+        # let young gaussians survive the opacity prune
+        self.refine_densify = bool(t.get("refine_densify", False))
+        self.refine_min_opacity = float(t.get("refine_min_opacity", 0.005))
+        self.densify_grad_threshold = config["opt_params"][
+            "densify_grad_threshold"
+        ]
+        self.densification_interval = config["opt_params"].get(
+            "densification_interval", 100
+        )
+        self.opacity_reset_interval = config["opt_params"].get(
+            "opacity_reset_interval", 3000
+        )
 
         self.iteration_count = 0
         self.occ_aware_visibility = {}
@@ -389,9 +402,28 @@ class OfflineMapper:
                     self.gaussians.max_radii2D[visibility_filter],
                     radii[visibility_filter],
                 )
+                self.gaussians.add_densification_stats(
+                    render_pkg["viewspace_points"], visibility_filter
+                )
                 self.gaussians.optimizer.step()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
                 self.gaussians.update_learning_rate(iteration)
+                if (
+                    self.refine_densify
+                    and iteration < self.color_refine_iters // 2
+                    and iteration % self.densification_interval == 0
+                ):
+                    self.gaussians.densify_and_prune(
+                        self.densify_grad_threshold,
+                        self.refine_min_opacity,
+                        self.cameras_extent,
+                        None,
+                    )
+                if (
+                    self.refine_densify
+                    and iteration % self.opacity_reset_interval == 0
+                ):
+                    self.gaussians.reset_opacity()
 
     # ------------------------------------------------------------------
     # top-level offline run

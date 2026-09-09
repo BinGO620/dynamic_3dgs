@@ -1,0 +1,14 @@
+# A7-rev4 probe: offline sharpening — densify in refinement, young-point survival
+inherit_from: configs/legacy/bonn_removing_nonobstructing_box.yaml
+
+model_params:
+  sh_degree: 2
+
+Dataset:
+  adaptive_pointsize: false
+  point_size: 0.01
+
+Training:
+  gaussian_th: 0.1
+  size_threshold: 0
+  refine_densify: true
