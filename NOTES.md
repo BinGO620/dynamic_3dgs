@@ -10,7 +10,7 @@
 | 5 | 2026-09-09 | lifecycle_gate E0（第二轮：单遍流式） | ✅ 完成 | 12 run 全 rc=0。**机制方向在 SLAM 时刻表下翻转确认**：Ma/Mb 深度 -6~-13%（第一轮为 +6% 恶化）、placing 静区 +2.48dB；但幅度低于门槛（均值 +0.96dB/0.934×），PSNR 代价随行。协议效应确认（C0-e0 比多轮低 1.5dB）。verdict: evidence/verdict_e0.md |
 | 6 | 2026-09-09 | lifecycle_gate R3（retire_ev 0.1） | ✅ 完成（阴性） | 放松退场阈值全线变差（placing 7.86/kidnapping 8.72，覆盖率掉到 0.67）——retire_ev=0.2 即最优工作点，无"调松就好"路径。**三轮总判决：显式退场门控=深度-光度 trade，净收益序列依赖，止损**。存活机制=A5 软先验；对症下一步=观察窗/确认制（deferred_commit 思想）。verdict: evidence/verdict_r3.md |
 | 3 | 2026-09-09 | baseline_v3_long（60k 步 static） | ✅ 完成 | **访问次数杠杆证伪**：4× 训练（15k→60k，每视图 120 次访问）PSNR 仅 11.64→11.69（+0.05dB），深度 42.9→42.7cm。12dB 平台=动态近距视角原理性误差地板，非优化不足。阶段0.5 判据闭环：A6 深度线过、静区锐度缺口即地板本身。**阶段0.5 收口，管线就绪，可开阶段1**（机制臂 vs baseline_v3） |
-| 7 | 2026-09-09 | legacy_core（Phase A 底座验收） | 🔄 进行中 | 关键判决落地：自造 trainer 是瓶颈 → 搬 stock MonoGS 映射核心（upstream 6c9254c，非 monogs-ours 魔改版）为离线驱动（GT 位姿，无 tracking/BA），CUDA 栈从上游 pin 编译进本仓库 env。判据：TUM fr3 walking_xyz ≥15dB / Bonn removing+placing ≥19dB。四件套: results/legacy_core/README.md |
+| 7 | 2026-09-09 | legacy_core（Phase A 底座验收） | ✅ 完成（止损） | stock MonoGS 映射核心搬为离线驱动成功（GT 位姿、rc=0、L2 Δ0.014dB），但**流式语义=弱底座**：TUM walking_xyz 16.0dB（A1✓≥15）、Bonn removing/placing 16.6/16.0（A2/A3✗<19）。渲染证据=全糊+插桩证明 SLAM-prune 吃掉新点（14.4万→1.8万）；逐帧kf/SH/足迹/refine致密化四杠杆全试无效（rev4 反而爆浮丝、dL1 191cm）。**锚点修正：monogs-ours 23.66dB=完整 gsplat 多轮 trainer（TUM walking_xyz），流式代价≈7.7dB**。判决：Phase A 形态选错，正确底座=多轮离线 3DGS 引擎。verdict: results/legacy_core/evidence/verdict_r2.md |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
 
