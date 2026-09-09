@@ -11,6 +11,7 @@
 | 6 | 2026-09-09 | lifecycle_gate R3（retire_ev 0.1） | ✅ 完成（阴性） | 放松退场阈值全线变差（placing 7.86/kidnapping 8.72，覆盖率掉到 0.67）——retire_ev=0.2 即最优工作点，无"调松就好"路径。**三轮总判决：显式退场门控=深度-光度 trade，净收益序列依赖，止损**。存活机制=A5 软先验；对症下一步=观察窗/确认制（deferred_commit 思想）。verdict: evidence/verdict_r3.md |
 | 3 | 2026-09-09 | baseline_v3_long（60k 步 static） | ✅ 完成 | **访问次数杠杆证伪**：4× 训练（15k→60k，每视图 120 次访问）PSNR 仅 11.64→11.69（+0.05dB），深度 42.9→42.7cm。12dB 平台=动态近距视角原理性误差地板，非优化不足。阶段0.5 判据闭环：A6 深度线过、静区锐度缺口即地板本身。**阶段0.5 收口，管线就绪，可开阶段1**（机制臂 vs baseline_v3） |
 | 7 | 2026-09-09 | legacy_core（Phase A 底座验收） | ✅ 完成（止损） | stock MonoGS 映射核心搬为离线驱动成功（GT 位姿、rc=0、L2 Δ0.014dB），但**流式语义=弱底座**：TUM walking_xyz 16.0dB（A1✓≥15）、Bonn removing/placing 16.6/16.0（A2/A3✗<19）。渲染证据=全糊+插桩证明 SLAM-prune 吃掉新点（14.4万→1.8万）；逐帧kf/SH/足迹/refine致密化四杠杆全试无效（rev4 反而爆浮丝、dL1 191cm）。**锚点修正：monogs-ours 23.66dB=其自研魔改 MonoGS backend（slam_backend 2380 行，A-F 消融 A 臂）——stock 流式与它的差距 ≈7.7dB 是数周 backend 工程量**。verdict: results/legacy_core/evidence/verdict_r2.md |
+| 8 | 2026-09-09 晚 | legacy_a2（路线 Y 阶梯，无人值守） | 🔄 过夜运行中 | 用户拍板路线 Y。4 臂单变量阶梯（bonn_removing seed0）：a1 offline 精修（多轮全训练帧）→ a2 +前半程 ADC 致密化 → a3 +SH2爬坡 → a4 +建图期软剪枝；winner 复跑 TUM/placing 确认。30 帧冒烟即 18.05dB/dL1 12.8cm（a2 通路致密化净转正信号）。判据：≥19dB 达标早停；全臂 ≤16.85 判路线 Y 伪。driver: scripts/overnight_ladder.py（幂等+progress.json） |
 
 （新实验立项时在此追加一行；详细结论写入下方"已验证结论"，证据在 results/{exp_id}/）
 
