@@ -93,7 +93,9 @@ def run_one(config_path: str, out_dir: str, seed: int = 0) -> dict | None:
 
 def make_confirm_config(src_config: str, dataset_path: str, tmp_dir: str) -> str:
     """Clone a ladder config and repoint it at a different dataset."""
-    cfg = yaml.safe_load(open(src_config))
+    from dynamic_3dgs.config import load_config
+    cfg = load_config(src_config)  # fully merged; no inherit_from resolution needed
+    cfg.pop("inherit_from", None)
     cfg["dataset"]["path"] = dataset_path
     cfg.pop("abstract", None)
     out = os.path.join(tmp_dir, "confirm_" + os.path.basename(src_config))

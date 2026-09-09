@@ -53,12 +53,12 @@ def main():
     cfg["dataset"] = ds_cfg
     dataset = load_monogs_dataset(cfg)
 
+    if args.refine_iters >= 0:
+        cfg["Training"]["color_refine_iters"] = args.refine_iters
+
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "config_used.yaml"), "w") as f:
         yaml.safe_dump(cfg, f)
-
-    if args.refine_iters >= 0:
-        cfg["Training"]["color_refine_iters"] = args.refine_iters
 
     mapper = OfflineMapper(cfg, dataset, save_dir=args.out)
     mapper.run()

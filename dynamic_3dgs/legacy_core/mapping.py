@@ -255,7 +255,10 @@ class OfflineMapper:
                         self.init_gaussian_extent,
                         None,
                     )
-                if self.iteration_count == self.init_gaussian_reset:
+                if self.iteration_count == self.init_gaussian_reset or (
+                    self.iteration_count
+                    == self.config["opt_params"]["densify_from_iter"]
+                ):
                     self.gaussians.reset_opacity()
                 self.gaussians.optimizer.step()
                 self.gaussians.optimizer.zero_grad(set_to_none=True)
@@ -346,7 +349,9 @@ class OfflineMapper:
                             to_prune = torch.logical_and(
                                 self.gaussians.n_obs <= prune_coviz, mask
                             )
-                        if to_prune is not None:
+                        # stock guard: n_obs prune applies to MONOCULAR only;
+                        # RGB-D maps keep low-observation recent gaussians
+                        if to_prune is not None and self.monocular:
                             self.gaussians.prune_points(to_prune.cuda())
                             for idx in range(len(current_window)):
                                 kf_idx = current_window[idx]
@@ -405,7 +410,7 @@ class OfflineMapper:
         # rebuild the optimizer view: viewpoints carry no grads here, only
         # gaussians optimize (GT poses)
         for iteration in tqdm(range(1, iteration_total + 1), desc="offline_refine"):
-            frame_idx = train_idx[iteration % len(train_idx)]
+            frame_idx = train_idx[(iteration - 1) % len(train_idx)]
             viewpoint = self.viewpoints[frame_idx]
             render_pkg = render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
