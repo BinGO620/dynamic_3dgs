@@ -503,4 +503,5 @@ class OfflineMapper:
             kf_indices=set(self.kf_indices),
             projection_matrix=self.make_projection_matrix(),
             iteration="final",
+            save_renders=8,
         )

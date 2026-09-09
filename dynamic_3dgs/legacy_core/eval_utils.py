@@ -59,6 +59,7 @@ def eval_rendering(
     projection_matrix,
     iteration="final",
     eval_exposure_aligned=True,
+    save_renders=0,
 ):
     """Render every 5th frame with GT pose and report PSNR (raw +
     exposure-aligned) / SSIM / LPIPS / depth L1-cm.
@@ -71,6 +72,7 @@ def eval_rendering(
     end_idx = len(dataset) if iteration == "final" else int(iteration)
     psnr_array, ssim_array, lpips_array, depth_l1_array = [], [], [], []
     depth_l1_cov_array, cov_ratio_array, psnr_aligned_array = [], [], []
+    render_dump = []
     saved_frame_idx = []
     cal_lpips = LearnedPerceptualImagePatchSimilarity(
         net_type="alex", normalize=True
@@ -108,6 +110,8 @@ def eval_rendering(
             psnr_aligned_array.append(
                 psnr(img_a.unsqueeze(0), (gt_image[mask]).unsqueeze(0)).item()
             )
+        if save_renders > 0 and len(render_dump) < save_renders:
+            render_dump.append((idx, gt_image.detach().cpu(), image.detach().cpu()))
         depth_l1_cm = _compute_depth_l1_cm(render_pkg["depth"], gt_depth)
         depth_l1_cov, cov_ratio = _compute_depth_l1_cm_coverage(
             render_pkg["depth"], gt_depth
@@ -147,6 +151,18 @@ def eval_rendering(
         f"[eval] psnr: {output['mean_psnr']:.3f} ssim: {output['mean_ssim']:.4f} "
         f"lpips: {output['mean_lpips']:.4f} depth_l1_cm: {output['mean_depth_l1_cm']}"
     )
+
+    # render dumps for visual evidence (first N eval frames, gt|render)
+    if save_renders > 0 and render_dump:
+        render_dir = os.path.join(save_dir, "evidence_renders", str(iteration))
+        mkdir_p(render_dir)
+        import torchvision.utils as vutils
+
+        for idx, gt_i, img_i in render_dump:
+            vutils.save_image(
+                torch.cat([gt_i, img_i], dim=2),
+                os.path.join(render_dir, f"frame_{idx:05d}_gt_render.png"),
+            )
 
     psnr_save_dir = os.path.join(save_dir, "psnr", str(iteration))
     mkdir_p(psnr_save_dir)
