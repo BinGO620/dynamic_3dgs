@@ -35,15 +35,24 @@ L2 门禁：ΔPSNR=0.014dB ✅（o3d 不可种子化来源）。
 
 ## 锚点修正（重要，修正 handover 判据依据）
 
-monogs-ours NOTES 实勘（只读）：**23.66±0.26dB = TUM walking_xyz 上
-完整 gsplat 1.5.3 多轮 trainer**（interleaved 全训练帧 + 完整致密化体系）的
-A 臂基线——不是 MonoGS 流式管线、也不是 Bonn。即同一序列上：
-多轮离线 3DGS 23.66 vs MonoGS 流式 16.0 → **流式语义代价 ≈ 7.7dB**。
-DGS-SLAM/DyGS-SLAM 的 20-22dB 是动态 SLAM 口径（含动态处理/mask）。
+monogs-ours NOTES + 源码实勘（只读）：**23.66±0.26dB = TUM walking_xyz 上
+monogs-ours 自己重度魔改的 MonoGS backend**（A-F 消融矩阵 A 臂，4 seeds）。
+其 slam_backend.py 已从 stock 482 行魔改到 2380 行（逐高斯 grad/percent_dense
+knobs、selective ledger、无害删除压缩、三臂生命周期、decay 家族）——**不是
+stock MonoGS，也不是独立多轮 gsplat trainer**（NOTES 里"完整 gsplat trainer"
+指另一条 mask-loss 实验）。同一序列上：monogs-ours 魔改 backend 23.66 vs
+stock MonoGS（本仓库移植版）16.0 → **差距 ≈ 7.7dB 来自 monogs-ours 数周
+backend 工程**，decay 族本身只贡献 +0.8~1.0（D/F vs A）。DGS-SLAM/DyGS-SLAM
+的 20-22dB 是动态 SLAM 口径（含动态处理/mask）。
 
-## 下一步（新立项）
+## 下一步（新立项，待用户拍板）
 
-底座手术改为搬 **monogs-ours 的完整 gsplat trainer 引擎**（多轮离线 3DGS，
-按边界声明只读按文件复制）或等价地给本仓库 v3 trainer 补齐致密化体系；
-验收线 A1-A3 不变（TUM ≥15 已过线但按可达上限 23.66 重标期望；Bonn ≥19
-在静态-map ceiling 证据下需重新论证或改为"静区 PSNR+动态处理机制后"口径）。
+- 路线 X：把 monogs-ours 的 backend 工程增量（per-gaussian knobs + prune
+  语义修复 + 无害删除压缩）按文件移植进 legacy_core —— 手术量 1-2 天级别，
+  且该 backend 是 monogs-ours 会话的现役资产（边界允许只读搬运，但迭代会
+  漂移）。
+- 路线 Y：放弃"SLAM 流式语义"，直接做多轮离线 3DGS（Inria ADC 语义 +
+  多 epoch + GT 深度）——本仓库 v3 trainer 的正确化版本；与 Phase B
+  生命周期机制的"多轮重访擦除"语境更贴合（ROADMAP §6 风险预注册过）。
+- 无论路线，Bonn ≥19 的可达性须先在所选底座上单独验证（当前证据：静态
+  -map + 27% 动区像素的 ceiling 未测出精确值，rev4 前 ~17）。
