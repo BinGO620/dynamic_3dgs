@@ -40,6 +40,7 @@ def main():
     ap.add_argument("--eval-stride", type=int, default=None)
     ap.add_argument("--train-frame-stride", type=int, default=None)
     ap.add_argument("--lifecycle", default=None, choices=["off", "placebo", "retire", "full"])
+    ap.add_argument("--retire-ev", type=float, default=None)
     ap.add_argument("--stream-pass", action="store_true",
                     help="E0: temporal single-pass streaming schedule")
     ap.add_argument("--stream-k", type=int, default=None)
@@ -57,6 +58,8 @@ def main():
         cfg["dataset"]["eval_stride"] = args.eval_stride
     if args.lifecycle is not None:
         cfg["lifecycle"] = args.lifecycle
+    if args.retire_ev is not None:
+        cfg["retire_ev"] = args.retire_ev
     if args.stream_pass:
         cfg["stream_pass"] = True
     if args.stream_k is not None:
