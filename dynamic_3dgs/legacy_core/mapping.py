@@ -84,6 +84,9 @@ class OfflineMapper:
         self.kf_overlap = t["kf_overlap"]
         self.kf_cutoff = t.get("kf_cutoff", 0.4)
         self.prune_mode = t.get("prune_mode", "slam")
+        # offline dense-keyframing: every non-eval frame extends the map
+        # (A7-rev3); stock selection rules only gate the stock path
+        self.kf_every_frame = bool(t.get("kf_every_frame", False))
         self.rgb_boundary_threshold = t["rgb_boundary_threshold"]
         self.alpha = t.get("alpha", 0.95)
         self.lambda_dssim = config["opt_params"]["lambda_dssim"]
@@ -439,22 +442,25 @@ class OfflineMapper:
                 )
 
             last_keyframe_idx = self.current_window[0]
-            check_time = (cur_frame_idx - last_keyframe_idx) >= self.kf_interval
-            create_kf = self.is_keyframe(
-                cur_frame_idx,
-                last_keyframe_idx,
-                curr_visibility,
-                self.occ_aware_visibility,
-            )
-            if len(self.current_window) < self.window_size:
-                union = torch.logical_or(
-                    curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
-                ).count_nonzero()
-                intersection = torch.logical_and(
-                    curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
-                ).count_nonzero()
-                point_ratio = intersection / union
-                create_kf = check_time and point_ratio < self.kf_overlap
+            if self.kf_every_frame:
+                create_kf = True
+            else:
+                check_time = (cur_frame_idx - last_keyframe_idx) >= self.kf_interval
+                create_kf = self.is_keyframe(
+                    cur_frame_idx,
+                    last_keyframe_idx,
+                    curr_visibility,
+                    self.occ_aware_visibility,
+                )
+                if len(self.current_window) < self.window_size:
+                    union = torch.logical_or(
+                        curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
+                    ).count_nonzero()
+                    intersection = torch.logical_and(
+                        curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
+                    ).count_nonzero()
+                    point_ratio = intersection / union
+                    create_kf = check_time and point_ratio < self.kf_overlap
 
             if create_kf:
                 self.current_window, removed = self.add_to_window(
