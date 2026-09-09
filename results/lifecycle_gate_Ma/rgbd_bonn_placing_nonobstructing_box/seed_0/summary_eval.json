@@ -1,11 +1,11 @@
 {
   "tag": "eval",
   "n_frames": 144,
-  "mean_psnr": 10.040355952382972,
-  "mean_ssim": 0.49654274640811813,
-  "mean_lpips": 0.8212231455577744,
-  "mean_depth_l1_cm": 38.24165774923232,
-  "mean_coverage": 0.8079552033709155,
-  "mean_psnr_static_cons": 12.006940378931965,
-  "mean_psnr_exp_aligned": 10.226668016450171
+  "mean_psnr": 7.878652351334681,
+  "mean_ssim": 0.38786547051535714,
+  "mean_lpips": 0.8476489902370505,
+  "mean_depth_l1_cm": 38.699202094640995,
+  "mean_coverage": 0.7090429642962085,
+  "mean_psnr_static_cons": 9.680089900690307,
+  "mean_psnr_exp_aligned": 7.9625728101568365
 }
