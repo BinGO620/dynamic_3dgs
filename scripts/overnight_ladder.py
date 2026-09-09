@@ -58,16 +58,19 @@ def save_progress(p: dict):
 
 def run_one(config_path: str, out_dir: str, seed: int = 0) -> dict | None:
     """Run one arm. Returns parsed result.json or None on failure.
-    Idempotent: skip if result.json already present."""
-    result_path = os.path.join(out_dir, "seed_0", "result.json")
+    Idempotent: skip if result.json already present. run_legacy.py writes
+    flat into --out, so the seed dir IS the --out (repo convention
+    {arm}/{seq}/seed_{n})."""
+    run_out = os.path.join(out_dir, f"seed_{seed}")
+    result_path = os.path.join(run_out, "result.json")
     if os.path.exists(result_path):
-        print(f"[ladder] skip (exists): {out_dir}")
+        print(f"[ladder] skip (exists): {run_out}")
         return json.load(open(result_path))
-    os.makedirs(os.path.dirname(result_path), exist_ok=True)
+    os.makedirs(run_out, exist_ok=True)
     cmd = [
         PY, RUN_LEGACY,
         "--config", config_path,
-        "--out", out_dir,
+        "--out", run_out,
         "--seed", str(seed),
     ]
     print(f"[ladder] >>> {' '.join(cmd)}")
@@ -78,7 +81,7 @@ def run_one(config_path: str, out_dir: str, seed: int = 0) -> dict | None:
         print(f"[ladder] FAILED rc={proc.returncode} after {dt:.0f}s: {out_dir}")
         return None
     if not os.path.exists(result_path):
-        print(f"[ladder] no result.json after success: {out_dir}")
+        print(f"[ladder] no result.json after success: {run_out}")
         return None
     res = json.load(open(result_path))
     res["_wall_s"] = dt
