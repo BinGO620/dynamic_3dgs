@@ -1,0 +1,4 @@
+inherit_from: configs/legacy/tum_base.yaml
+
+dataset:
+  path: datasets/tum/rgbd_dataset_freiburg3_walking_xyz

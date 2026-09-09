@@ -156,9 +156,10 @@ class TumFormatDataset(torch.utils.data.Dataset):
         self.eval_stride = eval_stride
         self.is_eval = np.array([i % eval_stride == 0 for i in range(len(self.samples))])
         # fixed-count training views spread uniformly over non-eval frames
+        # (train_views <= 0 = use ALL non-eval frames; legacy_core streaming)
         n_train = int(train_views)
         candidates = np.where(~self.is_eval)[0]
-        if len(candidates) > n_train:
+        if n_train > 0 and len(candidates) > n_train:
             sel = np.linspace(0, len(candidates) - 1, n_train).astype(int)
             candidates = candidates[sel]
         self.is_train = np.zeros(len(self.samples), dtype=bool)

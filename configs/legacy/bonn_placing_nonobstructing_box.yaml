@@ -1,0 +1,4 @@
+inherit_from: configs/legacy/bonn_base.yaml
+
+dataset:
+  path: datasets/bonn/rgbd_bonn_placing_nonobstructing_box
