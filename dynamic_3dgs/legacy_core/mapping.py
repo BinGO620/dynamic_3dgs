@@ -91,6 +91,13 @@ class OfflineMapper:
         self.alpha = t.get("alpha", 0.95)
         self.lambda_dssim = config["opt_params"]["lambda_dssim"]
         self.color_refine_iters = t.get("color_refine_iters", 26000)
+        # refinement mode: "color" = stock 26k RGB-only random-view pass;
+        # "offline" = multi-round over ALL train frames (incl. depth loss) with
+        # optional first-half ADC densification (route-Y ladder, legacy_a2)
+        self.refine_mode = t.get("refine_mode", "color")
+        self.refine_densify_frac = float(t.get("refine_densify_frac", 0.5))
+        self.refine_depth_alpha = float(t.get("refine_depth_alpha", 0.2))
+        self.sh_ramp = bool(t.get("sh_ramp", False))
         # offline sharpening levers (A7-rev4): densify during refinement,
         # let young gaussians survive the opacity prune
         self.refine_densify = bool(t.get("refine_densify", False))
@@ -378,6 +385,63 @@ class OfflineMapper:
         return gaussian_split
 
     def color_refinement(self):
+        if self.refine_mode == "offline":
+            return self.offline_refinement()
+        self._color_refinement_stock()
+
+    def offline_refinement(self):
+        """Route-Y refinement: multi-round over every train frame with the
+        mapping RGB-D loss (exposure-compensated), ADC densification in the
+        first ``refine_densify_frac`` of iterations and periodic global
+        opacity resets — Inria 3DGS semantics on top of the streamed map."""
+        train_idx = sorted(self.viewpoints.keys())
+        projection_matrix = self.make_projection_matrix()
+        iteration_total = self.color_refine_iters
+        densify_until = int(iteration_total * self.refine_densify_frac)
+        # rebuild the optimizer view: viewpoints carry no grads here, only
+        # gaussians optimize (GT poses)
+        for iteration in tqdm(range(1, iteration_total + 1), desc="offline_refine"):
+            frame_idx = train_idx[iteration % len(train_idx)]
+            viewpoint = self.viewpoints[frame_idx]
+            render_pkg = render(
+                viewpoint, self.gaussians, self.pipeline_params, self.background
+            )
+            loss = get_loss_mapping(
+                self.config,
+                render_pkg["render"],
+                render_pkg["depth"],
+                viewpoint,
+                render_pkg["opacity"],
+            )
+            loss = loss.mean() if torch.is_tensor(loss) and loss.dim() > 0 else loss
+            loss.backward()
+            with torch.no_grad():
+                visibility_filter = render_pkg["visibility_filter"]
+                radii = render_pkg["radii"]
+                self.gaussians.max_radii2D[visibility_filter] = torch.max(
+                    self.gaussians.max_radii2D[visibility_filter],
+                    radii[visibility_filter],
+                )
+                self.gaussians.add_densification_stats(
+                    render_pkg["viewspace_points"], visibility_filter
+                )
+                self.gaussians.optimizer.step()
+                self.gaussians.optimizer.zero_grad(set_to_none=True)
+                self.gaussians.update_learning_rate(iteration)
+                if self.sh_ramp and iteration % 1000 == 0:
+                    self.gaussians.oneupSHdegree()
+                if iteration < densify_until:
+                    if iteration % self.densification_interval == 0:
+                        self.gaussians.densify_and_prune(
+                            self.densify_grad_threshold,
+                            self.refine_min_opacity,
+                            self.cameras_extent,
+                            None,
+                        )
+                    if iteration % self.opacity_reset_interval == 0:
+                        self.gaussians.reset_opacity()
+
+    def _color_refinement_stock(self):
         iteration_total = self.color_refine_iters
         for iteration in tqdm(range(1, iteration_total + 1), desc="color_refine"):
             viewpoint_idx_stack = list(self.viewpoints.keys())

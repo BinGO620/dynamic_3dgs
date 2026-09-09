@@ -1,0 +1,5 @@
+# legacy_a2 a4: a2 + softer map-phase prune (young-point survival)
+inherit_from: configs/legacy/ladder/a2_offline_densify.yaml
+
+Training:
+  gaussian_th: 0.2

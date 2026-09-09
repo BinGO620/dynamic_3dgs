@@ -1,0 +1,6 @@
+# legacy_a2 a2: a1 + first-half ADC densification + periodic opacity reset
+inherit_from: configs/legacy/ladder/a1_offline_refine.yaml
+
+Training:
+  refine_densify_frac: 0.5
+  refine_min_opacity: 0.005

@@ -1,0 +1,6 @@
+# legacy_a2 a1: multi-round offline refinement (no densification)
+inherit_from: configs/legacy/bonn_removing_nonobstructing_box.yaml
+
+Training:
+  refine_mode: offline
+  refine_densify_frac: 0.0

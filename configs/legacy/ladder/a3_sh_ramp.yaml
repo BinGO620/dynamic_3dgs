@@ -1,0 +1,8 @@
+# legacy_a2 a3: a2 + sh_degree 2 with SH ramp
+inherit_from: configs/legacy/ladder/a2_offline_densify.yaml
+
+model_params:
+  sh_degree: 2
+
+Training:
+  sh_ramp: true
