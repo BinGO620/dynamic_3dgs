@@ -18,7 +18,7 @@ Training:
   init_gaussian_update: 100
   init_itr_num: 1050
   kf_cutoff: 0.3
-  kf_interval: 1
+  kf_interval: 5
   kf_min_translation: 0.05
   kf_overlap: 0.9
   kf_translation: 0.08
@@ -31,25 +31,25 @@ Training:
 abstract: true
 dataset:
   calibration:
-    cx: 320.1
-    cy: 247.6
+    cx: 315.59352
+    cy: 237.756098
     depth_scale: 5000.0
-    distorted: false
-    fx: 535.4
-    fy: 539.2
+    distorted: true
+    fx: 542.822841
+    fy: 542.57687
     height: 480
-    k1: 0.0
-    k2: 0.0
+    k1: 0.039903
+    k2: -0.099343
     k3: 0.0
-    p1: 0.0
-    p2: 0.0
+    p1: -0.00073
+    p2: -0.000144
     width: 640
   eval_stride: 5
   max_dt: 0.02
   max_frames: -1
-  path: datasets/tum/rgbd_dataset_freiburg3_walking_xyz
+  path: datasets/bonn/rgbd_bonn_placing_nonobstructing_box
   train_views: -1
-  type: tum
+  type: bonn
 model_params:
   sh_degree: 0
 opt_params:
