@@ -1,0 +1,5 @@
+# legacy_a2 M1: offline multi-round + densify, stock COLOR loss (no depth term)
+inherit_from: configs/legacy/ladder/a2_offline_densify.yaml
+
+Training:
+  refine_loss: color

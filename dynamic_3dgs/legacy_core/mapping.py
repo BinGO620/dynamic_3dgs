@@ -97,6 +97,10 @@ class OfflineMapper:
         self.refine_mode = t.get("refine_mode", "color")
         self.refine_densify_frac = float(t.get("refine_densify_frac", 0.5))
         self.refine_depth_alpha = float(t.get("refine_depth_alpha", 0.2))
+        # M1/M2: refinement loss composition — "mapping" = RGB-D (uncovered
+        # pixels charged |0-gt|, the phase-0.5 A2 pitfall), "color" = stock
+        # 0.8*L1+0.2*DSSIM, "color_depth_masked" = color + alpha>=0.5-masked depth
+        self.refine_loss = t.get("refine_loss", "mapping")
         self.sh_ramp = bool(t.get("sh_ramp", False))
         # offline sharpening levers (A7-rev4): densify during refinement,
         # let young gaussians survive the opacity prune
@@ -406,14 +410,33 @@ class OfflineMapper:
             render_pkg = render(
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
-            loss = get_loss_mapping(
-                self.config,
-                render_pkg["render"],
-                render_pkg["depth"],
-                viewpoint,
-                render_pkg["opacity"],
-            )
-            loss = loss.mean() if torch.is_tensor(loss) and loss.dim() > 0 else loss
+            image = render_pkg["render"]
+            gt_image = viewpoint.original_image.cuda()
+            if self.refine_loss == "mapping":
+                loss = get_loss_mapping(
+                    self.config, image, render_pkg["depth"], viewpoint,
+                    render_pkg["opacity"],
+                )
+                loss = (
+                    loss.mean()
+                    if torch.is_tensor(loss) and loss.dim() > 0
+                    else loss
+                )
+            else:
+                Ll1 = l1_loss(image, gt_image)
+                loss = (1.0 - self.lambda_dssim) * Ll1 + self.lambda_dssim * (
+                    1.0 - ssim(image, gt_image)
+                )
+                if self.refine_loss == "color_depth_masked":
+                    gt_depth = torch.from_numpy(viewpoint.depth).to(
+                        dtype=torch.float32, device=image.device
+                    )[None]
+                    dmask = (gt_depth > 0.01) & (render_pkg["opacity"] >= 0.5)
+                    if dmask.any():
+                        l1_d = torch.abs(
+                            render_pkg["depth"][dmask] - gt_depth[dmask]
+                        ).mean()
+                        loss = loss + self.refine_depth_alpha * l1_d
             loss.backward()
             with torch.no_grad():
                 visibility_filter = render_pkg["visibility_filter"]

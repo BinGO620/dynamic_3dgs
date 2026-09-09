@@ -1,0 +1,6 @@
+# legacy_a2 M2: a5 + coverage-masked depth term (alpha>=0.5 & gt>1cm)
+inherit_from: configs/legacy/ladder/a5_color_loss.yaml
+
+Training:
+  refine_loss: color_depth_masked
+  refine_depth_alpha: 0.2

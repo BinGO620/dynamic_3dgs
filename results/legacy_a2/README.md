@@ -50,3 +50,14 @@ bonn removing 16.65dB）之上，把 26k 色彩精修替换为"全训练帧多�
 nohup python scripts/overnight_ladder.py > results/legacy_a2/ladder.log 2>&1 &
 # 进度: results/legacy_a2/progress.json (driver 每 run 追加)
 ```
+
+## 修正案（2026-09-09 深夜，a1/a2 数据落地后）
+
+| # | 变更 | 原因 |
+|---|---|---|
+| M1 | 新增臂 **a5**：offline 多轮 + 前半程致密化，但精修损失改回 stock 色彩损失（0.8·RGB-L1 + 0.2·DSSIM，无深度项） | a1=13.54/a2=13.89 均 < base 16.65，且深度更好（35-38 vs 52cm）而 RGB 崩——指向深度项在无覆盖像素按 \|0−gt\| 全额计损（阶段0.5 A2 同类坑），拉伸高斯凑覆盖破坏 RGB。隔离"损失构成"与"多轮+致密化调度" |
+| M2 | 新增臂 **a6**：a5 + 深度项保留但以渲染 alpha≥0.5 掩码（coverage-masked depth） | 若 a5 好 a6 更好 → 深度监督在掩码下兼容多轮；若 a6 差 → 精修期纯色彩调度 |
+| M3 | driver 修复 out-dir 契约 bug 后重启；a1 结果迁移至 seed_0 布局（未重算） | 落盘路径不一致导致 driver 误判 + 死亡 |
+
+其余判据不变。a3（SH2）/a4（软剪枝）在 offline+深度损失下已无信息量，跳过
+（其机制与 M1/M2 正交，若 a5/a6 达标再单变量补测）。

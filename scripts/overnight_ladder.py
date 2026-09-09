@@ -33,8 +33,10 @@ PROGRESS = os.path.join(REPO, "results", "legacy_a2", "progress.json")
 ARMS = [
     ("a1_offline_refine", "configs/legacy/ladder/a1_offline_refine.yaml"),
     ("a2_offline_densify", "configs/legacy/ladder/a2_offline_densify.yaml"),
-    ("a3_sh_ramp", "configs/legacy/ladder/a3_sh_ramp.yaml"),
-    ("a4_soft_prune", "configs/legacy/ladder/a4_soft_prune.yaml"),
+    # a3/a4 skipped per README amendment M3 (uninformative under the buggy
+    # depth-charged loss); M1/M2 arms isolate loss composition
+    ("a5_color_loss", "configs/legacy/ladder/a5_color_loss.yaml"),
+    ("a6_color_depth_masked", "configs/legacy/ladder/a6_color_depth_masked.yaml"),
 ]
 
 GATE_TARGET = 19.0  # A2 preregistered target (dB)

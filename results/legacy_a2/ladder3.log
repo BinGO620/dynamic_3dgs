@@ -1,0 +1,1 @@
+[ladder] >>> /data/conda_envs/dynamic_3dgs/bin/python /data/dynamic_3dgs/scripts/run_legacy.py --config configs/legacy/ladder/a5_color_loss.yaml --out /data/dynamic_3dgs/results/legacy_a2/a5_color_loss/bonn_removing/seed_0 --seed 0
