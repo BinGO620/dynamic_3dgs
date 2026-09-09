@@ -47,6 +47,33 @@ python scripts/run_baseline.py --config configs/bonn/rgbd_bonn_removing_nonobstr
 正式实验 3090 每卡≤2 并发、固定 worker 池、与 monogs 会话错峰并先查占用；
 本地 push → 远程 pull → HEAD 一致才跑。
 
+## legacy_core（Phase A，MonoGS 底座，2026-09-09）
+
+自造 gsplat trainer 被判为 PSNR 平台主瓶颈后，把 **stock MonoGS**
+（upstream 6c9254c，非 monogs-ours 魔改版）的映射核心搬为离线驱动：
+`dynamic_3dgs/legacy_core/`（GT 位姿，无 tracking/BA/子图；CUDA 栈 =
+w-pose 栅格化器 + simple-knn，从上游 pin 编译，见 `resources/upstream/UPSTREAM.md`）。
+
+```bash
+# 本机 2060 冒烟
+python scripts/run_legacy.py --config configs/legacy/tum_walking_xyz.yaml \
+  --out results/debug_x --max-frames 40 --refine-iters 20
+# 验收 run（完整映射循环 + 26k 色彩精修 + held-out 评测）
+python scripts/run_legacy.py --config configs/legacy/bonn_removing_nonobstructing_box.yaml \
+  --out results/legacy_core/bonn_removing/seed_0
+```
+
+远程 3090 构建依赖（本地 wheel 只含 sm_75）：
+```bash
+cd ~/cron/dynamic_3dgs && mkdir -p resources/upstream && \
+git clone --depth 1 --recurse-submodules --shallow-submodules \
+  https://github.com/muskie82/MonoGS.git resources/upstream/MonoGS && \
+CUDA_HOME=$HOME/anaconda3/envs/nvcc118 PATH=$HOME/anaconda3/envs/nvcc118/bin:$PATH \
+  ~/anaconda3/envs/dynamic_3dgs/bin/python -m pip install \
+  ./resources/upstream/MonoGS/submodules/diff-gaussian-rasterization \
+  ./resources/upstream/MonoGS/submodules/simple-knn --no-build-isolation
+```
+
 ## 阶段0 / 0.5 基线（seed 0，姜伟恒 3090）
 
 v1 = vanilla 融合初始化+纯精调（2026-09-08）；v3 = 阶段0.5 A5 协议

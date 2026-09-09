@@ -31,6 +31,24 @@ def _compute_depth_l1_cm(render_depth, gt_depth):
     return torch.mean(torch.abs(depth[valid] - gt_depth_t[valid])).item() * 100.0
 
 
+def _compute_depth_l1_cm_coverage(render_depth, gt_depth):
+    """Coverage-masked variant: only pixels where the map actually renders
+    depth (>1cm). Raw _compute_depth_l1_cm charges uncovered (0-depth) pixels
+    at full weight, so sparse-keyframe maps look metres off. Supplementary
+    metric — the preregistered gate is PSNR."""
+    if gt_depth is None:
+        return None, None
+    depth = render_depth.squeeze()
+    gt_depth_t = torch.as_tensor(gt_depth, device=depth.device, dtype=depth.dtype)
+    valid = (gt_depth_t > 0) & torch.isfinite(gt_depth_t) & torch.isfinite(depth)
+    cov = valid & (depth > 0.01)
+    l1_all = torch.mean(torch.abs(depth[valid] - gt_depth_t[valid])).item() * 100.0
+    if not cov.any():
+        return l1_all, 0.0
+    l1_cov = torch.mean(torch.abs(depth[cov] - gt_depth_t[cov])).item() * 100.0
+    return l1_cov, cov.float().sum().item() / valid.float().sum().item()
+
+
 def eval_rendering(
     frames,
     gaussians,
@@ -46,6 +64,7 @@ def eval_rendering(
     interval = 5
     end_idx = len(frames) if iteration == "final" else int(iteration)
     psnr_array, ssim_array, lpips_array, depth_l1_array = [], [], [], []
+    depth_l1_cov_array, cov_ratio_array = [], []
     saved_frame_idx = []
     cal_lpips = LearnedPerceptualImagePatchSimilarity(
         net_type="alex", normalize=True
@@ -71,8 +90,13 @@ def eval_rendering(
             cal_lpips((image).unsqueeze(0), (gt_image).unsqueeze(0)).item()
         )
         depth_l1_cm = _compute_depth_l1_cm(render_pkg["depth"], gt_depth)
+        depth_l1_cov, cov_ratio = _compute_depth_l1_cm_coverage(
+            render_pkg["depth"], gt_depth
+        )
         if depth_l1_cm is not None:
             depth_l1_array.append(depth_l1_cm)
+            depth_l1_cov_array.append(depth_l1_cov)
+            cov_ratio_array.append(cov_ratio)
 
     output = dict()
     output["frames"] = saved_frame_idx
@@ -89,6 +113,12 @@ def eval_rendering(
     output["mean_lpips"], _ = _finite_mean(lpips_array)
     output["mean_depth_l1_cm"] = (
         float(np.mean(depth_l1_array)) if depth_l1_array else None
+    )
+    output["mean_depth_l1_cm_cov"] = (
+        float(np.mean(depth_l1_cov_array)) if depth_l1_cov_array else None
+    )
+    output["mean_depth_coverage"] = (
+        float(np.mean(cov_ratio_array)) if cov_ratio_array else None
     )
     output["n_eval_frames"] = len(psnr_array)
     if n_drop:
